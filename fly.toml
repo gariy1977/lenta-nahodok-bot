@@ -10,11 +10,3 @@ strategy = "immediate"
 [env]
 BOT_TOKEN = "8439066571:AAE80bkMrNF1J6jJwR2qumjkDSs0EPFGLfI"
 CHANNEL_ID = "-1003571651319"
-
-[[services]]
-  internal_port = 8080
-  protocol = "tcp"
-
-  [[services.ports]]
-    port = 8080
-    handlers = ["http"]
