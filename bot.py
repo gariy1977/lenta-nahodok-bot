@@ -4,7 +4,7 @@ from aiogram.filters import CommandStart
 from aiogram.enums import ParseMode
 
 TOKEN = "8439066571:AAE80bkMrNF1J6jJwR2qumjkDSs0EPFGLfI"
-CHANNEL_ID = -1001234567890  # ВСТАВЬ ID КАНАЛА
+CHANNEL_ID = -1003571651319  # ВСТАВЬ ID КАНАЛА
 
 bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
