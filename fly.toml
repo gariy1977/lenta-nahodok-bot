@@ -5,8 +5,8 @@ kill_timeout = 5
 processes = []
 
 [env]
-BOT_TOKEN = "ВАШ_BOT_TOKEN"
-CHANNEL_ID = "@ВашКанал"
+BOT_TOKEN = "8439066571:AAE80bkMrNF1J6jJwR2qumjkDSs0EPFGLfI"
+CHANNEL_ID = "-1003571651319"
 
 [[services]]
   internal_port = 8080
