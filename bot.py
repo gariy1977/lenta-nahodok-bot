@@ -1,17 +1,34 @@
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    KeyboardButton
+)
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 import asyncio
 import os
 
+# === Конфиг ===
 TOKEN = os.getenv("BOT_TOKEN") or "8439066571:AAE80bkMrNF1J6jJwR2qumjkDSs0EPFGLfI"
 CHANNEL_ID = os.getenv("CHANNEL_ID") or "-1003571651319"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
+
+# === Клавиатуры ===
+start_kb = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="▶️ Старт")]],
+    resize_keyboard=True
+)
+
+main_kb = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="➕ Загрузить товар")]],
+    resize_keyboard=True
+)
 
 # === FSM состояния ===
 class AddProduct(StatesGroup):
@@ -22,9 +39,25 @@ class AddProduct(StatesGroup):
     photo = State()
     preview = State()
 
-# === Старт ===
-@dp.message(Command("add"))
-async def cmd_add(message: types.Message, state: FSMContext):
+# === /start ===
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    await message.answer(
+        "Привет 🌿\nНажми «Старт», чтобы начать работу.",
+        reply_markup=start_kb
+    )
+
+# === Кнопка Старт ===
+@dp.message(F.text == "▶️ Старт")
+async def start_by_button(message: types.Message):
+    await message.answer(
+        "Отлично ✨\nТеперь можешь загрузить товар.",
+        reply_markup=main_kb
+    )
+
+# === Кнопка Загрузить товар ===
+@dp.message(F.text == "➕ Загрузить товар")
+async def add_by_button(message: types.Message, state: FSMContext):
     await state.set_state(AddProduct.name)
     await message.answer("✏️ Вставь название товара:")
 
@@ -88,7 +121,7 @@ async def process_photo(message: types.Message, state: FSMContext):
 
     await state.set_state(AddProduct.preview)
 
-# === Callback ===
+# === Callback предпросмотра ===
 @dp.callback_query(AddProduct.preview, F.data.in_(["publish", "cancel"]))
 async def preview_callback(query: types.CallbackQuery, state: FSMContext):
     if query.data == "publish":
@@ -114,12 +147,18 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
         )
 
         await query.message.edit_reply_markup()
-        await query.message.answer("✅ Товар опубликован в канале")
+        await query.message.answer(
+            "✅ Товар опубликован",
+            reply_markup=main_kb
+        )
         await state.clear()
 
     else:
         await query.message.edit_reply_markup()
-        await query.message.answer("❌ Добавление отменено")
+        await query.message.answer(
+            "❌ Добавление отменено",
+            reply_markup=main_kb
+        )
         await state.clear()
 
 # === Запуск ===
