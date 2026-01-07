@@ -4,6 +4,9 @@ kill_signal = "SIGINT"
 kill_timeout = 5
 processes = []
 
+[deploy]
+strategy = "immediate"
+
 [env]
 BOT_TOKEN = "8439066571:AAE80bkMrNF1J6jJwR2qumjkDSs0EPFGLfI"
 CHANNEL_ID = "-1003571651319"
