@@ -123,10 +123,10 @@ async def photos_callback(query: types.CallbackQuery, state: FSMContext):
 
         # Превью с мини-анимациями и рамками
         preview_text = (
-            f"✨🧸 <b>{data['name']}</b> 🧸✨\n\n"
+            f"✨🧸 {data['name']} 🧸✨\n\n"
             f"📝 {data['description']}\n\n"
             f"💰 Ціна: {data['price']} 💰\n"
-            f"🎉🐱🎩 Лови свій бонус і купуй зараз! 🌟✨"
+            f"🎉🐱 Лови свій бонус і купуй зараз! 🌟✨"
         )
 
         # Кнопки предпросмотра
@@ -158,7 +158,7 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
         data = await state.get_data()
 
         text = (
-            f"✨🧸 <b>{data['name']}</b> 🧸✨\n\n"
+            f"✨🧸 {data['name']} 🧸✨\n\n"
             f"📝 {data['description']}\n\n"
             f"💰 Ціна: {data['price']} 💰\n"
             f"🎉 Купуй зараз та отримай свій бонус 🐱🎩"
