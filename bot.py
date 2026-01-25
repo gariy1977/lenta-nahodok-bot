@@ -59,7 +59,10 @@ async def start_by_button(message: types.Message):
 # === Кнопка Додати товар ===
 @dp.message(F.text == "➕ Додати товар")
 async def add_by_button(message: types.Message, state: FSMContext):
+    # Сбрасываем старые данные
+    await state.clear()
     await state.set_state(AddProduct.name)
+    await state.update_data(photo_ids=[])
     await message.answer("✏️ Введи назву товару:")
 
 # === Название ===
@@ -95,8 +98,7 @@ async def process_link(message: types.Message, state: FSMContext):
 # === Фото ===
 @dp.message(AddProduct.photos, F.photo)
 async def process_photos(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    photo_ids = data.get("photo_ids", [])
+    photo_ids = (await state.get_data()).get("photo_ids", [])
     photo_ids.append(message.photo[-1].file_id)
     await state.update_data(photo_ids=photo_ids)
 
@@ -108,7 +110,6 @@ async def process_photos(message: types.Message, state: FSMContext):
             ]
         ]
     )
-
     await message.answer(
         f"Фото додано. Всього зараз: {len(photo_ids)}",
         reply_markup=keyboard
@@ -119,9 +120,11 @@ async def process_photos(message: types.Message, state: FSMContext):
 async def photos_callback(query: types.CallbackQuery, state: FSMContext):
     if query.data == "done_photos":
         data = await state.get_data()
+        if not data.get("photo_ids"):
+            await query.message.answer("⚠️ Не додано жодного фото! Надішли хоча б одне.")
+            return
         await state.set_state(AddProduct.preview)
 
-        # Превью с мини-анимациями и рамками
         preview_text = (
             f"✨🧸 {data['name']} 🧸✨\n\n"
             f"📝 {data['description']}\n\n"
@@ -129,7 +132,6 @@ async def photos_callback(query: types.CallbackQuery, state: FSMContext):
             f"🎉🐱 Лови свій бонус і купуй зараз! 🌟✨"
         )
 
-        # Кнопки предпросмотра
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="🛒 Подивитися та Купити", url=data['link'])],
@@ -140,12 +142,7 @@ async def photos_callback(query: types.CallbackQuery, state: FSMContext):
             ]
         )
 
-        # Сетка фото как карусель с рамками и эмодзи
-        media = []
-        for pid in data["photo_ids"]:
-            caption = "✨🌟"  # простая рамка эмодзи вокруг фото
-            media.append(InputMediaPhoto(media=pid, caption=caption))
-
+        media = [InputMediaPhoto(media=pid, caption="✨🌟") for pid in data["photo_ids"]]
         await query.message.answer_media_group(media=media)
         await query.message.answer(preview_text, reply_markup=keyboard)
     else:
@@ -154,41 +151,29 @@ async def photos_callback(query: types.CallbackQuery, state: FSMContext):
 # === Callback предпросмотра ===
 @dp.callback_query(AddProduct.preview, F.data.in_(["publish", "cancel"]))
 async def preview_callback(query: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
     if query.data == "publish":
-        data = await state.get_data()
-
         text = (
             f"✨🧸 {data['name']} 🧸✨\n\n"
             f"📝 {data['description']}\n\n"
             f"💰 Ціна: {data['price']} 💰\n"
             f"🎉 Купуй зараз та отримай свій бонус 🐱🎩"
         )
-
         buy_keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="🛒 Подивитися та Купити", url=data['link'])]
             ]
         )
-
-        # Публикуем фото как карусель с рамками
-        media = []
-        for pid in data["photo_ids"]:
-            media.append(InputMediaPhoto(media=pid, caption="✨🌟"))
+        media = [InputMediaPhoto(media=pid, caption="✨🌟") for pid in data["photo_ids"]]
         await bot.send_media_group(chat_id=CHANNEL_ID, media=media)
         await bot.send_message(chat_id=CHANNEL_ID, text=text, reply_markup=buy_keyboard)
 
         await query.message.edit_reply_markup()
-        await query.message.answer(
-            "✅ Товар опубліковано!",
-            reply_markup=main_kb
-        )
+        await query.message.answer("✅ Товар опубліковано!", reply_markup=main_kb)
         await state.clear()
     else:
         await query.message.edit_reply_markup()
-        await query.message.answer(
-            "❌ Додавання відмінено",
-            reply_markup=main_kb
-        )
+        await query.message.answer("❌ Додавання відмінено", reply_markup=main_kb)
         await state.clear()
 
 # === Запуск ===
