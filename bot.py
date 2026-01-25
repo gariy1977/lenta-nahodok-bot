@@ -4,7 +4,8 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
-    KeyboardButton
+    KeyboardButton,
+    InputMediaPhoto
 )
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
@@ -26,7 +27,7 @@ start_kb = ReplyKeyboardMarkup(
 )
 
 main_kb = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="➕ Загрузить товар")]],
+    keyboard=[[KeyboardButton(text="➕ Додати товар")]],
     resize_keyboard=True
 )
 
@@ -36,14 +37,14 @@ class AddProduct(StatesGroup):
     description = State()
     price = State()
     link = State()
-    photo = State()
+    photos = State()
     preview = State()
 
 # === /start ===
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "Привет 🌿\nНажми «Старт», чтобы начать работу.",
+        "Привіт 🌿\nНатисни «Старт», щоб почати роботу.",
         reply_markup=start_kb
     )
 
@@ -51,75 +52,104 @@ async def cmd_start(message: types.Message):
 @dp.message(F.text == "▶️ Старт")
 async def start_by_button(message: types.Message):
     await message.answer(
-        "Отлично ✨\nТеперь можешь загрузить товар.",
+        "✨ Відмінно! Тепер можеш додати товар.",
         reply_markup=main_kb
     )
 
-# === Кнопка Загрузить товар ===
-@dp.message(F.text == "➕ Загрузить товар")
+# === Кнопка Додати товар ===
+@dp.message(F.text == "➕ Додати товар")
 async def add_by_button(message: types.Message, state: FSMContext):
     await state.set_state(AddProduct.name)
-    await message.answer("✏️ Вставь название товара:")
+    await message.answer("✏️ Введи назву товару:")
 
 # === Название ===
 @dp.message(AddProduct.name, F.text)
 async def process_name(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text)
     await state.set_state(AddProduct.description)
-    await message.answer("📝 Вставь описание товара:")
+    await message.answer("📝 Введи опис товару:")
 
 # === Описание ===
 @dp.message(AddProduct.description, F.text)
 async def process_description(message: types.Message, state: FSMContext):
     await state.update_data(description=message.text)
     await state.set_state(AddProduct.price)
-    await message.answer("💰 Укажи цену:")
+    await message.answer("💰 Вкажи ціну:")
 
 # === Цена ===
 @dp.message(AddProduct.price, F.text)
 async def process_price(message: types.Message, state: FSMContext):
     await state.update_data(price=message.text)
     await state.set_state(AddProduct.link)
-    await message.answer("🔗 Вставь партнёрскую ссылку:")
+    await message.answer("🔗 Встав партнёрське посилання:")
 
 # === Ссылка ===
 @dp.message(AddProduct.link, F.text)
 async def process_link(message: types.Message, state: FSMContext):
     await state.update_data(link=message.text)
-    await state.set_state(AddProduct.photo)
-    await message.answer("📸 Пришли фото товара:")
+    await state.set_state(AddProduct.photos)
+    await message.answer(
+        "📸 Надішли фото товару (можна кілька). Коли все готово — натисни ✅ Готово."
+    )
 
 # === Фото ===
-@dp.message(AddProduct.photo, F.photo)
-async def process_photo(message: types.Message, state: FSMContext):
-    photo_id = message.photo[-1].file_id
-    await state.update_data(photo_id=photo_id)
-
+@dp.message(AddProduct.photos, F.photo)
+async def process_photos(message: types.Message, state: FSMContext):
     data = await state.get_data()
-
-    preview_text = (
-        f"🧸 {data['name']}\n\n"
-        f"{data['description']}\n\n"
-        f"💰 Цiна: {data['price']}"
-    )
+    photo_ids = data.get("photo_ids", [])
+    photo_ids.append(message.photo[-1].file_id)
+    await state.update_data(photo_ids=photo_ids)
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🛒 Подивитись та Купити", url=data['link'])],
             [
-                InlineKeyboardButton(text="✅ Опубликовать", callback_data="publish"),
-                InlineKeyboardButton(text="❌ Отмена", callback_data="cancel"),
-            ],
+                InlineKeyboardButton(text="➕ Додати ще фото", callback_data="add_more_photos"),
+                InlineKeyboardButton(text="✅ Готово", callback_data="done_photos")
+            ]
         ]
     )
 
-    await message.answer_photo(
-        photo=photo_id,
-        caption=preview_text,
+    await message.answer(
+        f"Фото додано. Всього зараз: {len(photo_ids)}",
         reply_markup=keyboard
     )
 
-    await state.set_state(AddProduct.preview)
+# === Callback фото ===
+@dp.callback_query(F.data.in_(["add_more_photos", "done_photos"]))
+async def photos_callback(query: types.CallbackQuery, state: FSMContext):
+    if query.data == "done_photos":
+        data = await state.get_data()
+        await state.set_state(AddProduct.preview)
+
+        # Превью с мини-анимациями и рамками
+        preview_text = (
+            f"✨🧸 <b>{data['name']}</b> 🧸✨\n\n"
+            f"📝 {data['description']}\n\n"
+            f"💰 Ціна: {data['price']} 💰\n"
+            f"🎉🐱🎩 Лови свій бонус і купуй зараз! 🌟✨"
+        )
+
+        # Кнопки предпросмотра
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🛒 Подивитися та Купити", url=data['link'])],
+                [
+                    InlineKeyboardButton(text="✅ Опублікувати", callback_data="publish"),
+                    InlineKeyboardButton(text="❌ Відміна", callback_data="cancel")
+                ]
+            ]
+        )
+
+        # Сетка фото как карусель с рамками и эмодзи
+        media = []
+        for pid in data["photo_ids"]:
+            caption = "✨🌟"  # простая рамка эмодзи вокруг фото
+            media.append(InputMediaPhoto(media=pid, caption=caption))
+
+        await query.message.answer_media_group(media=media)
+        await query.message.answer(preview_text, reply_markup=keyboard)
+    else:
+        await query.message.answer("📸 Надішли ще фото товару")
 
 # === Callback предпросмотра ===
 @dp.callback_query(AddProduct.preview, F.data.in_(["publish", "cancel"]))
@@ -128,35 +158,35 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
         data = await state.get_data()
 
         text = (
-            f"🧸 {data['name']}\n\n"
-            f"{data['description']}\n\n"
-            f"💰 Цiна: {data['price']}"
+            f"✨🧸 <b>{data['name']}</b> 🧸✨\n\n"
+            f"📝 {data['description']}\n\n"
+            f"💰 Ціна: {data['price']} 💰\n"
+            f"🎉 Купуй зараз та отримай свій бонус 🐱🎩"
         )
 
         buy_keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="🛒 Подивитись та Купити", url=data['link'])]
+                [InlineKeyboardButton(text="🛒 Подивитися та Купити", url=data['link'])]
             ]
         )
 
-        await bot.send_photo(
-            chat_id=CHANNEL_ID,
-            photo=data['photo_id'],
-            caption=text,
-            reply_markup=buy_keyboard
-        )
+        # Публикуем фото как карусель с рамками
+        media = []
+        for pid in data["photo_ids"]:
+            media.append(InputMediaPhoto(media=pid, caption="✨🌟"))
+        await bot.send_media_group(chat_id=CHANNEL_ID, media=media)
+        await bot.send_message(chat_id=CHANNEL_ID, text=text, reply_markup=buy_keyboard)
 
         await query.message.edit_reply_markup()
         await query.message.answer(
-            "✅ Товар опубликован",
+            "✅ Товар опубліковано!",
             reply_markup=main_kb
         )
         await state.clear()
-
     else:
         await query.message.edit_reply_markup()
         await query.message.answer(
-            "❌ Добавление отменено",
+            "❌ Додавання відмінено",
             reply_markup=main_kb
         )
         await state.clear()
