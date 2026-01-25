@@ -59,10 +59,9 @@ async def start_by_button(message: types.Message):
 # === Кнопка Додати товар ===
 @dp.message(F.text == "➕ Додати товар")
 async def add_by_button(message: types.Message, state: FSMContext):
-    # Сбрасываем старые данные
-    await state.clear()
+    await state.clear()  # сброс всех предыдущих данных
     await state.set_state(AddProduct.name)
-    await state.update_data(photo_ids=[])
+    await state.update_data(photo_ids=[])  # новый список фото
     await message.answer("✏️ Введи назву товару:")
 
 # === Название ===
@@ -98,7 +97,8 @@ async def process_link(message: types.Message, state: FSMContext):
 # === Фото ===
 @dp.message(AddProduct.photos, F.photo)
 async def process_photos(message: types.Message, state: FSMContext):
-    photo_ids = (await state.get_data()).get("photo_ids", [])
+    data = await state.get_data()
+    photo_ids = data.get("photo_ids", [])
     photo_ids.append(message.photo[-1].file_id)
     await state.update_data(photo_ids=photo_ids)
 
@@ -110,6 +110,7 @@ async def process_photos(message: types.Message, state: FSMContext):
             ]
         ]
     )
+
     await message.answer(
         f"Фото додано. Всього зараз: {len(photo_ids)}",
         reply_markup=keyboard
@@ -120,16 +121,13 @@ async def process_photos(message: types.Message, state: FSMContext):
 async def photos_callback(query: types.CallbackQuery, state: FSMContext):
     if query.data == "done_photos":
         data = await state.get_data()
-        if not data.get("photo_ids"):
-            await query.message.answer("⚠️ Не додано жодного фото! Надішли хоча б одне.")
-            return
         await state.set_state(AddProduct.preview)
 
         preview_text = (
             f"✨🧸 {data['name']} 🧸✨\n\n"
             f"📝 {data['description']}\n\n"
             f"💰 Ціна: {data['price']} 💰\n"
-            f"🎉🐱 Лови свій бонус і купуй зараз! 🌟✨"
+            f"🎉 Купуй зараз та отримай свій бонус! 🐱🎩"
         )
 
         keyboard = InlineKeyboardMarkup(
@@ -142,6 +140,7 @@ async def photos_callback(query: types.CallbackQuery, state: FSMContext):
             ]
         )
 
+        # Отправляем карусель фото
         media = [InputMediaPhoto(media=pid, caption="✨🌟") for pid in data["photo_ids"]]
         await query.message.answer_media_group(media=media)
         await query.message.answer(preview_text, reply_markup=keyboard)
@@ -151,19 +150,18 @@ async def photos_callback(query: types.CallbackQuery, state: FSMContext):
 # === Callback предпросмотра ===
 @dp.callback_query(AddProduct.preview, F.data.in_(["publish", "cancel"]))
 async def preview_callback(query: types.CallbackQuery, state: FSMContext):
-    data = await state.get_data()
     if query.data == "publish":
+        data = await state.get_data()
         text = (
             f"✨🧸 {data['name']} 🧸✨\n\n"
             f"📝 {data['description']}\n\n"
             f"💰 Ціна: {data['price']} 💰\n"
-            f"🎉 Купуй зараз та отримай свій бонус 🐱🎩"
+            f"🎉 Купуй зараз та отримай свій бонус! 🐱🎩"
         )
         buy_keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="🛒 Подивитися та Купити", url=data['link'])]
-            ]
+            inline_keyboard=[[InlineKeyboardButton(text="🛒 Подивитися та Купити", url=data['link'])]]
         )
+
         media = [InputMediaPhoto(media=pid, caption="✨🌟") for pid in data["photo_ids"]]
         await bot.send_media_group(chat_id=CHANNEL_ID, media=media)
         await bot.send_message(chat_id=CHANNEL_ID, text=text, reply_markup=buy_keyboard)
