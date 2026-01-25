@@ -100,12 +100,12 @@ async def process_photo(message: types.Message, state: FSMContext):
     preview_text = (
         f"🧸 {data['name']}\n\n"
         f"{data['description']}\n\n"
-        f"💰 Цена: {data['price']}"
+        f"💰 Цiна: {data['price']}"
     )
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🛒 Купить", url=data['link'])],
+            [InlineKeyboardButton(text="🛒 Подивитись та Купити", url=data['link'])],
             [
                 InlineKeyboardButton(text="✅ Опубликовать", callback_data="publish"),
                 InlineKeyboardButton(text="❌ Отмена", callback_data="cancel"),
@@ -130,12 +130,12 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
         text = (
             f"🧸 {data['name']}\n\n"
             f"{data['description']}\n\n"
-            f"💰 Цена: {data['price']}"
+            f"💰 Цiна: {data['price']}"
         )
 
         buy_keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="🛒 Купить", url=data['link'])]
+                [InlineKeyboardButton(text="🛒 Подивитись та Купити", url=data['link'])]
             ]
         )
 
