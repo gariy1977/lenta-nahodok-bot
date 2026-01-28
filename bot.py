@@ -174,6 +174,11 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
         await query.message.answer("❌ Додавання відмінено", reply_markup=main_kb)
         await state.clear()
 
+@dp.message(Command("auto_add"))
+async def auto_add(message, state):
+    await state.set_state(AddProduct.preview)
+    await state.update_data(**product)
+    
 # === Запуск ===
 async def main():
     await dp.start_polling(bot)
