@@ -124,10 +124,10 @@ async def photos_callback(query: types.CallbackQuery, state: FSMContext):
         await state.set_state(AddProduct.preview)
 
         preview_text = (
-            f"✨🧸 {data['name']} 🧸✨\n\n"
-            f"📝 {data['description']}\n\n"
-            f"💰 Ціна: {data['price']} 💰\n"
-            f"🎉 Купуй зараз та отримай свій бонус! 🐱🎩"
+            f" {data['name']} \n\n"
+            f" {data['description']}\n\n"
+            f" Ціна: {data['price']} \n"
+            f" Купуй зараз та отримай свій бонус! "
         )
 
         keyboard = InlineKeyboardMarkup(
@@ -153,10 +153,10 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
     if query.data == "publish":
         data = await state.get_data()
         text = (
-            f"✨🧸 {data['name']} 🧸✨\n\n"
-            f"📝 {data['description']}\n\n"
-            f"💰 Ціна: {data['price']} 💰\n"
-            f"🎉 Купуй зараз та отримай свій бонус! 🐱🎩"
+            f" {data['name']} \n\n"
+            f" {data['description']}\n\n"
+            f" Ціна: {data['price']} \n"
+            f" Купуй зараз та отримай свій бонус! "
         )
         buy_keyboard = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="🛒 Подивитися та Купити", url=data['link'])]]
