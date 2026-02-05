@@ -156,7 +156,6 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
             f" {data['name']} \n\n"
             f" {data['description']}\n\n"
             f" Ціна: {data['price']} \n"
-            f" Купуй зараз та отримай свій бонус! "
         )
         buy_keyboard = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="🛒 Подивитися та Купити", url=data['link'])]]
