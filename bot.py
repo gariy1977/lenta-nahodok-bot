@@ -13,14 +13,13 @@ from aiogram.fsm.state import StatesGroup, State
 import asyncio
 import os
 
-# === Конфиг ===
-TOKEN = os.getenv("BOT_TOKEN") or "8439066571:AAE80bkMrNF1J6jJwR2qumjkDSs0EPFGLfI"
-CHANNEL_ID = os.getenv("CHANNEL_ID") or "-1003571651319"
+TOKEN = os.getenv("BOT_TOKEN") or "YOUR_TOKEN"
+CHANNEL_ID = os.getenv("CHANNEL_ID") or "-100XXXXXXXXXX"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# === Клавиатуры ===
+# === KEYBOARDS ===
 start_kb = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="▶️ Старт")]],
     resize_keyboard=True
@@ -31,7 +30,7 @@ main_kb = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# === FSM состояния ===
+# === FSM ===
 class AddProduct(StatesGroup):
     name = State()
     description = State()
@@ -40,145 +39,162 @@ class AddProduct(StatesGroup):
     photos = State()
     preview = State()
 
-# === /start ===
+# === START ===
 @dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    await message.answer(
-        "Привіт 🌿\nНатисни «Старт», щоб почати роботу.",
-        reply_markup=start_kb
-    )
+async def cmd_start(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Привіт 🌿\nНатисни «Старт», щоб почати.", reply_markup=start_kb)
 
-# === Кнопка Старт ===
 @dp.message(F.text == "▶️ Старт")
-async def start_by_button(message: types.Message):
-    await message.answer(
-        "✨ Відмінно! Тепер можеш додати товар.",
-        reply_markup=main_kb
-    )
+async def start_button(message: types.Message):
+    await message.answer("✨ Готово! Додавай товар.", reply_markup=main_kb)
 
-# === Кнопка Додати товар ===
+# === ADD PRODUCT ===
 @dp.message(F.text == "➕ Додати товар")
-async def add_by_button(message: types.Message, state: FSMContext):
-    await state.clear()  # сброс всех предыдущих данных
+async def add_product(message: types.Message, state: FSMContext):
+    await state.clear()
     await state.set_state(AddProduct.name)
-    await state.update_data(photo_ids=[])  # новый список фото
+    await state.update_data(photo_ids=[])
     await message.answer("✏️ Введи назву товару:")
 
-# === Название ===
+# === NAME ===
 @dp.message(AddProduct.name, F.text)
 async def process_name(message: types.Message, state: FSMContext):
-    await state.update_data(name=message.text)
+    await state.update_data(name=message.text.strip())
     await state.set_state(AddProduct.description)
     await message.answer("📝 Введи опис товару:")
 
-# === Описание ===
+# === DESCRIPTION ===
 @dp.message(AddProduct.description, F.text)
 async def process_description(message: types.Message, state: FSMContext):
-    await state.update_data(description=message.text)
+    await state.update_data(description=message.text.strip())
     await state.set_state(AddProduct.price)
     await message.answer("💰 Вкажи ціну:")
 
-# === Цена ===
+# === PRICE ===
 @dp.message(AddProduct.price, F.text)
 async def process_price(message: types.Message, state: FSMContext):
-    await state.update_data(price=message.text)
+    await state.update_data(price=message.text.strip())
     await state.set_state(AddProduct.link)
-    await message.answer("🔗 Встав партнёрське посилання:")
+    await message.answer("🔗 Встав посилання:")
 
-# === Ссылка ===
+# === LINK ===
 @dp.message(AddProduct.link, F.text)
 async def process_link(message: types.Message, state: FSMContext):
-    await state.update_data(link=message.text)
+    await state.update_data(link=message.text.strip())
     await state.set_state(AddProduct.photos)
-    await message.answer(
-        "📸 Надішли фото товару (можна кілька). Коли все готово — натисни ✅ Готово."
-    )
+    await message.answer("📸 Надішли фото товару. Коли все — натисни ✅ Готово.")
 
-# === Фото ===
+# === PHOTOS ===
 @dp.message(AddProduct.photos, F.photo)
-async def process_photos(message: types.Message, state: FSMContext):
+async def add_photo(message: types.Message, state: FSMContext):
     data = await state.get_data()
     photo_ids = data.get("photo_ids", [])
+
     photo_ids.append(message.photo[-1].file_id)
     await state.update_data(photo_ids=photo_ids)
 
-    keyboard = InlineKeyboardMarkup(
+    kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="➕ Додати ще фото", callback_data="add_more_photos"),
-                InlineKeyboardButton(text="✅ Готово", callback_data="done_photos")
+                InlineKeyboardButton(text="➕ Ще фото", callback_data="photo_more"),
+                InlineKeyboardButton(text="✅ Готово", callback_data="photo_done")
             ]
         ]
     )
 
-    await message.answer(
-        f"Фото додано. Всього зараз: {len(photo_ids)}",
-        reply_markup=keyboard
+    await message.answer(f"📸 Додано фото: {len(photo_ids)}", reply_markup=kb)
+
+# === PHOTO CALLBACK SAFE ===
+@dp.callback_query(F.data.in_(["photo_more", "photo_done"]))
+async def photo_callback(query: types.CallbackQuery, state: FSMContext):
+    current = await state.get_state()
+
+    if current != AddProduct.photos.state:
+        await query.answer("⚠️ Цей етап вже завершений", show_alert=True)
+        return
+
+    if query.data == "photo_more":
+        await query.message.answer("Надішли ще фото 📸")
+        await query.answer()
+        return
+
+    # DONE
+    data = await state.get_data()
+    photos = data.get("photo_ids", [])
+
+    if not photos:
+        await query.answer("❗ Додай хоча б одне фото", show_alert=True)
+        return
+
+    await state.set_state(AddProduct.preview)
+
+    text = (
+        f"<b>{data['name']}</b>\n\n"
+        f"{data['description']}\n\n"
+        f"💰 Ціна: {data['price']}"
     )
 
-# === Callback фото ===
-@dp.callback_query(F.data.in_(["add_more_photos", "done_photos"]))
-async def photos_callback(query: types.CallbackQuery, state: FSMContext):
-    if query.data == "done_photos":
-        data = await state.get_data()
-        await state.set_state(AddProduct.preview)
-
-        preview_text = (
-            f" {data['name']} \n\n"
-            f" {data['description']}\n\n"
-            f" Ціна: {data['price']} \n"
-            f" Купуй зараз та отримай свій бонус! "
-        )
-
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="🛒 Подивитися та Купити", url=data['link'])],
-                [
-                    InlineKeyboardButton(text="✅ Опублікувати", callback_data="publish"),
-                    InlineKeyboardButton(text="❌ Відміна", callback_data="cancel")
-                ]
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🛒 Купити", url=data['link'])],
+            [
+                InlineKeyboardButton(text="✅ Опублікувати", callback_data="publish"),
+                InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel")
             ]
-        )
+        ]
+    )
 
-        # Отправляем карусель фото
-        media = [InputMediaPhoto(media=pid, caption="✨🌟") for pid in data["photo_ids"]]
-        await query.message.answer_media_group(media=media)
-        await query.message.answer(preview_text, reply_markup=keyboard)
-    else:
-        await query.message.answer("📸 Надішли ще фото товару")
+    media = [InputMediaPhoto(media=p) for p in photos]
+    await query.message.answer_media_group(media=media)
+    await query.message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await query.answer()
 
-# === Callback предпросмотра ===
+# === PREVIEW CALLBACK ===
 @dp.callback_query(AddProduct.preview, F.data.in_(["publish", "cancel"]))
 async def preview_callback(query: types.CallbackQuery, state: FSMContext):
-    if query.data == "publish":
-        data = await state.get_data()
-        text = (
-            f" {data['name']} \n\n"
-            f" {data['description']}\n\n"
-            f" Ціна: {data['price']} \n"
-        )
-        buy_keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="🛒 Подивитися та Купити", url=data['link'])]]
-        )
+    data = await state.get_data()
 
-        media = [InputMediaPhoto(media=pid, caption="✨🌟") for pid in data["photo_ids"]]
-        await bot.send_media_group(chat_id=CHANNEL_ID, media=media)
-        await bot.send_message(chat_id=CHANNEL_ID, text=text, reply_markup=buy_keyboard)
-
-        await query.message.edit_reply_markup()
-        await query.message.answer("✅ Товар опубліковано!", reply_markup=main_kb)
+    if query.data == "cancel":
         await state.clear()
+        await query.message.answer("❌ Скасовано", reply_markup=main_kb)
+        await query.answer()
+        return
+
+    # publish
+    photos = data.get("photo_ids", [])
+    if not photos:
+        await query.answer("❗ Немає фото", show_alert=True)
+        return
+
+    text = (
+        f"<b>{data['name']}</b>\n\n"
+        f"{data['description']}\n\n"
+        f"💰 Ціна: {data['price']}"
+    )
+
+    media = [InputMediaPhoto(media=p) for p in photos]
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="🛒 Купити", url=data['link'])]]
+    )
+
+    await bot.send_media_group(CHANNEL_ID, media=media)
+    await bot.send_message(CHANNEL_ID, text, reply_markup=kb, parse_mode="HTML")
+
+    await state.clear()
+    await query.message.answer("✅ Товар опубліковано!", reply_markup=main_kb)
+    await query.answer()
+
+# === FALLBACK ===
+@dp.message()
+async def fallback(message: types.Message, state: FSMContext):
+    current = await state.get_state()
+    if current:
+        await message.answer("⚠️ Будь ласка, відповідай по етапу. Якщо зависло — натисни «➕ Додати товар»")
     else:
-        await query.message.edit_reply_markup()
-        await query.message.answer("❌ Додавання відмінено", reply_markup=main_kb)
-        await state.clear()
+        await message.answer("Натисни «➕ Додати товар», щоб почати", reply_markup=main_kb)
 
-@dp.message(Command("auto_add"))
-async def auto_add(message, state):
-    await state.set_state(AddProduct.preview)
-    await state.update_data(**product)
-    
-# === Запуск ===
+# === RUN ===
 async def main():
     await dp.start_polling(bot)
 
