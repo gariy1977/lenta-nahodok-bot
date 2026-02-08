@@ -4,9 +4,12 @@ import traceback
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import (
-    InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup, KeyboardButton,
-    InputMediaPhoto, Update
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    InputMediaPhoto,
+    Update
 )
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.fsm.context import FSMContext
@@ -110,7 +113,7 @@ async def photos_step(message: types.Message, state: FSMContext):
     sid = data["session_id"]
 
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[[
+        inline_keyboard=[[ 
             InlineKeyboardButton(text="➕ Ще фото", callback_data=f"more:{sid}"),
             InlineKeyboardButton(text="✅ Готово", callback_data=f"done:{sid}")
         ]]
@@ -147,7 +150,7 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
         f"👇 Подивитись та купити"
     )
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[[
+        inline_keyboard=[[ 
             InlineKeyboardButton(text="🛒 Подивитись та купити", url=data['link']),
             InlineKeyboardButton(text="✅ Опублікувати", callback_data=f"publish:{sid}"),
             InlineKeyboardButton(text="❌ Скасувати", callback_data=f"cancel:{sid}")
