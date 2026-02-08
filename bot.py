@@ -220,10 +220,19 @@ WEBAPP_PORT = int(os.environ.get("PORT", 8080))
 def create_app():
     app = web.Application()
 
-    async def on_startup(app):
-        print("=== Стартую бота ===")
-        await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
-        print("Webhook встановлено ✅")
+    async def on_startup():
+        info = await bot.get_webhook_info()
+        current_url = info.url
+        target_url = WEBHOOK_URL + WEBHOOK_PATH
+
+        if current_url != target_url:
+            try:
+                await bot.set_webhook(target_url)
+                print("Webhook встановлено ✅")
+            except TelegramRetryAfter as e:
+                print(f"Too many requests, retry after {e.timeout} seconds")
+                await asyncio.sleep(e.timeout)
+                await bot.set_webhook(target_url)
 
     async def on_cleanup(app):
         print("=== Завершаю бота ===")
