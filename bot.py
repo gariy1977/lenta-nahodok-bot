@@ -229,15 +229,14 @@ def create_app():
             try:
                 await bot.set_webhook(target_url)
                 print("Webhook встановлено ✅")
-            except TelegramRetryAfter as e:
-                print(f"Too many requests, retry after {e.timeout} seconds")
-                await asyncio.sleep(e.timeout)
-                await bot.set_webhook(target_url)
+            except Exception as e:
+                print(f"Помилка вебхуку: {e}")
 
-    async def on_cleanup(app: web.Application):
-        print("=== Завершаю бота ===")
-        await bot.session.close()
-        print("Сессия бота закрыта ✅")
+    def create_app():
+        app = web.Application()
+        app.on_startup.append(on_startup)
+        # остальные маршруты и cleanup
+        return app
 
     async def handle_webhook(request: web.Request):
         try:
