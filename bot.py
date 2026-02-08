@@ -1,57 +1,67 @@
 import os
 import asyncio
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.fsm.storage.redis import RedisStorage
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.log import setup_logging
 
-# --- Загружаем переменные окружения ---
+# ===== Настройки из env =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID")
-REDIS_URL = os.getenv("REDIS_URL")
+CHANNEL_ID = os.getenv("CHANNEL_ID")  # Например: "-1003571651319"
 
-# --- Настройка FSM через Redis (если нужно) ---
-storage = RedisStorage.from_url(REDIS_URL) if REDIS_URL else None
+# ===== Инициализация бота =====
+setup_logging(level="INFO")
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(storage=storage)
+dp = Dispatcher()
 
-# --- Обработчик фото с подписью (в одной подписи: название, описание, ссылка) ---
-@dp.message()
-async def handle_product_photo(message: types.Message):
-    if not message.photo:
-        return  # Игнорируем не-фото сообщения
-
-    if not message.caption:
-        await message.reply("Братанчик, подпись к фото нужна: Название, Описание, Ссылка!")
-        return
-
-    lines = message.caption.split("\n")
-    if len(lines) < 3:
-        await message.reply("Братанчик, подпись должна содержать 3 строки: Название, Описание, Ссылка!")
-        return
-
-    title = lines[0].replace("Название: ", "").strip()
-    description = lines[1].replace("Описание: ", "").strip()
-    ref_link = lines[2].replace("Ссылка: ", "").strip()
-
-    keyboard = InlineKeyboardMarkup().add(
-        InlineKeyboardButton(text="Подивитись та купити", url=ref_link)
-    )
-
-    photo = message.photo[-1].file_id  # берём самое большое фото
-
+# ===== Функция публикации товара =====
+async def send_product(channel_id: str, photo_bytes: bytes, description: str, referral_url: str):
+    # Создаем кнопку с партнерской ссылкой
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Подивитись та купити", url=referral_url)]
+    ])
+    
+    # Отправляем фото с подписью и кнопкой
     await bot.send_photo(
-        chat_id=CHANNEL_ID,
-        photo=photo,
-        caption=f"{title}\n{description}",
+        chat_id=channel_id,
+        photo=photo_bytes,
+        caption=description,
         reply_markup=keyboard
     )
 
-    await message.reply("✅ Товар отправлен в канал!")
+# ===== Обработчик команды /start =====
+@dp.message()
+async def start_handler(message: types.Message):
+    await message.answer("Привет! Пришли мне товар в формате:\nОписание; ссылка; картинка (файл)")
 
-# --- Запуск бота через asyncio.run ---
+# ===== Обработчик сообщений с документами (картинками) =====
+@dp.message()
+async def product_handler(message: types.Message):
+    # Проверяем, есть ли фото или документ
+    if message.photo:
+        photo = await message.photo[-1].download(destination=bytes)
+    elif message.document and message.document.mime_type.startswith("image/"):
+        photo = await message.document.download(destination=bytes)
+    else:
+        await message.reply("Нужно прислать картинку товара.")
+        return
+
+    # Разделяем текст на описание и ссылку
+    if not message.caption or ";" not in message.caption:
+        await message.reply("Подпись должна быть в формате: Описание; Ссылка")
+        return
+    
+    description, referral_url = map(str.strip, message.caption.split(";", 1))
+
+    # Публикуем в канал
+    await send_product(CHANNEL_ID, photo, description, referral_url)
+    await message.reply("Товар отправлен в канал ✅")
+
+# ===== Запуск бота =====
 async def main():
-    print("Братанчик, бот запускается...")
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
