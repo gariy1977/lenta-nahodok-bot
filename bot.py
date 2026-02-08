@@ -43,7 +43,8 @@ async def start(message: types.Message, state: FSMContext):
     await message.answer("Привіт 🌿 Натисни «Старт»", reply_markup=start_kb)
 
 @dp.message(F.text == "▶️ Старт")
-async def start_btn(message: types.Message):
+async def start_btn(message: types.Message, state: FSMContext):
+    await state.clear()
     await message.answer("Готово. Додавай товар 👇", reply_markup=main_kb)
 
 # ===== ADD PRODUCT =====
@@ -69,7 +70,7 @@ async def name_step(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text.strip())
     await state.set_state(AddProduct.description)
     await message.answer("📝 Введи опис:")
-
+    print("STATE NOW:", await state.get_state())
 # ===== DESCRIPTION =====
 @dp.message(AddProduct.description, F.text)
 async def desc_step(message: types.Message, state: FSMContext):
@@ -228,10 +229,27 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
 async def fallback(message: types.Message, state: FSMContext):
     current = await state.get_state()
 
-    if current:
-        await message.answer("⚠️ Продовжуй введення. Заверши товар.")
-    else:
-        await message.answer("Натисни «➕ Додати товар»", reply_markup=main_kb)
+    if current == AddProduct.name.state:
+        await message.answer("✏️ Введи назву товару:")
+        return
+
+    if current == AddProduct.description.state:
+        await message.answer("📝 Введи опис:")
+        return
+
+    if current == AddProduct.price.state:
+        await message.answer("💰 Вкажи ціну:")
+        return
+
+    if current == AddProduct.link.state:
+        await message.answer("🔗 Встав посилання:")
+        return
+
+    if current == AddProduct.photos.state:
+        await message.answer("📸 Надішли фото")
+        return
+
+    await message.answer("Натисни «➕ Додати товар»", reply_markup=main_kb)
 
 # ===== RUN =====
 async def main():
