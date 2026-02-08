@@ -15,7 +15,7 @@ from redis.asyncio import Redis
 
 TOKEN = os.getenv("BOT_TOKEN") or "8439066571:AAE80bkMrNF1J6jJwR2qumjkDSs0EPFGLfI"
 CHANNEL_ID = os.getenv("CHANNEL_ID") or "-1003571651319"
-REDIS_URL = os.getenv("REDIS_URL") or "redis://default:63b9cac5873c4abead1146f565ef7dff@fly-ra-redis.upstash.io:6379"
+REDIS_URL = os.getenv("REDIS_URL") or "rediss://default:63b9cac5873c4abead1146f565ef7dff@fly-ra-redis.upstash.io:6379"
 
 # ===== REDIS STORAGE =====
 redis_client = Redis.from_url(REDIS_URL, decode_responses=True, ssl=True)
