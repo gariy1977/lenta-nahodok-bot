@@ -204,6 +204,7 @@ async def on_startup(app):
     print("Webhook встановлено ✅")
 
 async def on_shutdown(app):
+    # Убираем storage.wait_closed() ❌
     await bot.delete_webhook()
     await bot.session.close()
     print("Webhook видалено, з’єднання закрито ✅")
