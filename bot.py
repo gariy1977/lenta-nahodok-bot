@@ -34,15 +34,11 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=storage)
 
 # ===== KEYBOARDS =====
-start_kb = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="▶️ Старт")]],
-    resize_keyboard=True
-)
+start_kb = ReplyKeyboardMarkup(resize_keyboard=True)
+start_kb.add(KeyboardButton("▶️ Старт"))
 
-main_kb = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="➕ Додати товар")]],
-    resize_keyboard=True
-)
+main_kb = ReplyKeyboardMarkup(resize_keyboard=True)
+main_kb.add(KeyboardButton("➕ Додати товар"))
 
 # ===== FSM =====
 class AddProduct(StatesGroup):
