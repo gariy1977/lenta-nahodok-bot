@@ -9,3 +9,5 @@ strategy = "immediate"
 [env]
 BOT_TOKEN = "8439066571:AAE80bkMrNF1J6jJwR2qumjkDSs0EPFGLfI"
 CHANNEL_ID = "-1003571651319"
+REDIS_URL = "rediss://default:63b9cac5873c4abead1146f565ef7dff@fly-ra-redis.upstash.io:6379"
+WEBHOOK_URL = "https://lenta-nahodok-bot.fly.dev"  # только домен, path /webhook уже в bot.py
