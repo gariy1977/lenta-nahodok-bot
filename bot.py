@@ -93,7 +93,6 @@ async def link_step(message: types.Message, state: FSMContext):
 @dp.message(AddProduct.photos, F.photo)
 async def photos_step(message: types.Message, state: FSMContext):
     data = await state.get_data()
-
     photos = data.get("photo_ids", [])
     photos.append(message.photo[-1].file_id)
 
@@ -127,7 +126,7 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
         return
 
     if await state.get_state() != AddProduct.photos.state:
-        await query.answer("⚠️ Етап завершено", show_alert=True)
+        await query.answer("⚠️ Етап фото завершено", show_alert=True)
         return
 
     if action == "more":
@@ -145,12 +144,13 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
     text = (
         f"<b>{data['name']}</b>\n\n"
         f"{data['description']}\n\n"
-        f"💰 {data['price']}"
+        f"💰 {data['price']}\n\n"
+        f"👇 Подивитись та купити"
     )
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🛒 Купити", url=data['link'])],
+            [InlineKeyboardButton(text="🛒 Подивитись та купити", url=data['link'])],
             [
                 InlineKeyboardButton(text="✅ Опублікувати", callback_data=f"publish:{sid}"),
                 InlineKeyboardButton(text="❌ Скасувати", callback_data=f"cancel:{sid}")
@@ -158,10 +158,16 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
         ]
     )
 
-    media = [InputMediaPhoto(media=p) for p in photos]
+    # CAPTION ONLY ON FIRST PHOTO
+    media = []
+    for i, p in enumerate(photos):
+        if i == 0:
+            media.append(InputMediaPhoto(media=p, caption=text, parse_mode="HTML"))
+        else:
+            media.append(InputMediaPhoto(media=p))
 
     await query.message.answer_media_group(media=media)
-    await query.message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await query.message.answer("Перевір товар 👇", reply_markup=kb)
     await query.answer()
 
 # ===== PREVIEW CALLBACK =====
@@ -194,17 +200,22 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
     text = (
         f"<b>{data['name']}</b>\n\n"
         f"{data['description']}\n\n"
-        f"💰 {data['price']}"
+        f"💰 {data['price']}\n\n"
+        f"👇 Подивитись та купити"
     )
-
-    media = [InputMediaPhoto(media=p) for p in photos]
 
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="🛒 Купити", url=data['link'])]]
+        inline_keyboard=[[InlineKeyboardButton(text="🛒 Подивитись та купити", url=data['link'])]]
     )
 
+    media = []
+    for i, p in enumerate(photos):
+        if i == 0:
+            media.append(InputMediaPhoto(media=p, caption=text, parse_mode="HTML"))
+        else:
+            media.append(InputMediaPhoto(media=p))
+
     await bot.send_media_group(CHANNEL_ID, media=media)
-    await bot.send_message(CHANNEL_ID, text, reply_markup=kb, parse_mode="HTML")
 
     await state.clear()
     await query.message.answer("✅ Товар опубліковано!", reply_markup=main_kb)
@@ -213,9 +224,7 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
 # ===== FALLBACK =====
 @dp.message()
 async def fallback(message: types.Message, state: FSMContext):
-    current = await state.get_state()
-
-    if current:
+    if await state.get_state():
         await message.answer("⚠️ Йди по кроках. Заверши товар.")
     else:
         await message.answer("Натисни «➕ Додати товар»", reply_markup=main_kb)
