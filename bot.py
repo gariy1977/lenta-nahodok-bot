@@ -1,6 +1,5 @@
 import os
 import uuid
-import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import (
@@ -31,8 +30,14 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=storage)
 
 # ===== KEYBOARDS =====
-start_kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="▶️ Старт")]], resize_keyboard=True)
-main_kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="➕ Додати товар")]], resize_keyboard=True)
+start_kb = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="▶️ Старт")]],
+    resize_keyboard=True
+)
+main_kb = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="➕ Додати товар")]],
+    resize_keyboard=True
+)
 
 # ===== FSM =====
 class AddProduct(StatesGroup):
@@ -43,7 +48,7 @@ class AddProduct(StatesGroup):
     photos = State()
     preview = State()
 
-# ===== HANDLERS =====
+# ===== START =====
 @dp.message(Command("start"))
 async def start(message: types.Message, state: FSMContext):
     await state.clear()
@@ -54,6 +59,7 @@ async def start_btn(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Готово. Додавай товар 👇", reply_markup=main_kb)
 
+# ===== ADD PRODUCT =====
 @dp.message(F.text == "➕ Додати товар")
 async def add_product(message: types.Message, state: FSMContext):
     if await state.get_state():
@@ -64,31 +70,35 @@ async def add_product(message: types.Message, state: FSMContext):
     await state.set_state(AddProduct.name)
     await message.answer("✏️ Введи назву товару:")
 
-# ===== STEPS =====
+# ===== NAME =====
 @dp.message(AddProduct.name, F.text)
 async def name_step(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text.strip())
     await state.set_state(AddProduct.description)
     await message.answer("📝 Введи опис:")
 
+# ===== DESCRIPTION =====
 @dp.message(AddProduct.description, F.text)
 async def desc_step(message: types.Message, state: FSMContext):
     await state.update_data(description=message.text.strip())
     await state.set_state(AddProduct.price)
     await message.answer("💰 Вкажи ціну:")
 
+# ===== PRICE =====
 @dp.message(AddProduct.price, F.text)
 async def price_step(message: types.Message, state: FSMContext):
     await state.update_data(price=message.text.strip())
     await state.set_state(AddProduct.link)
     await message.answer("🔗 Встав посилання:")
 
+# ===== LINK =====
 @dp.message(AddProduct.link, F.text)
 async def link_step(message: types.Message, state: FSMContext):
     await state.update_data(link=message.text.strip())
     await state.set_state(AddProduct.photos)
     await message.answer("📸 Надішли фото. Коли все — натисни ✅ Готово.")
 
+# ===== PHOTOS =====
 @dp.message(AddProduct.photos, F.photo)
 async def photos_step(message: types.Message, state: FSMContext):
     data = await state.get_data()
@@ -102,6 +112,7 @@ async def photos_step(message: types.Message, state: FSMContext):
     ]])
     await message.answer(f"📸 Додано фото: {len(photos)}", reply_markup=kb)
 
+# ===== PHOTO CALLBACK =====
 @dp.callback_query(F.data.startswith(("more:", "done:")))
 async def photo_callback(query: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -139,6 +150,7 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
     await query.message.answer("Перевір товар 👇", reply_markup=kb)
     await query.answer()
 
+# ===== PREVIEW CALLBACK =====
 @dp.callback_query(F.data.startswith(("publish:", "cancel:")))
 async def preview_callback(query: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -165,14 +177,15 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
         f"💰 {data['price']}\n\n"
         f"👇 Подивитись та купити"
     )
-    await bot.send_media_group(
-        CHANNEL_ID,
-        media=[types.InputMediaPhoto(media=p, caption=text if i==0 else None, parse_mode="HTML") for i, p in enumerate(photos)]
-    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[[ 
+        InlineKeyboardButton("🛒 Подивитись та купити", url=data['link'])
+    ]])
+    await bot.send_media_group(CHANNEL_ID, media=[types.InputMediaPhoto(media=p, caption=text if i==0 else None, parse_mode="HTML") for i, p in enumerate(photos)])
     await state.clear()
     await query.message.answer("✅ Товар опубліковано!", reply_markup=main_kb)
     await query.answer()
 
+# ===== FALLBACK =====
 @dp.message()
 async def fallback(message: types.Message, state: FSMContext):
     current = await state.get_state()
@@ -186,10 +199,6 @@ WEBHOOK_PATH = "/webhook"
 WEBAPP_HOST = "0.0.0.0"
 WEBAPP_PORT = int(os.environ.get("PORT", 8080))
 
-# ===== CREATE APP =====
-app = web.Application()
-app.router.add_post(WEBHOOK_PATH, lambda request: handle_webhook(request))
-
 async def on_startup(app):
     await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
     print("Webhook встановлено ✅")
@@ -199,9 +208,6 @@ async def on_shutdown(app):
     await bot.session.close()
     print("Webhook видалено, з’єднання закрито ✅")
 
-app.on_startup.append(on_startup)
-app.on_cleanup.append(on_shutdown)
-
 async def handle_webhook(request: web.Request):
     try:
         data = await request.json()
@@ -210,6 +216,12 @@ async def handle_webhook(request: web.Request):
     except Exception as e:
         print("Webhook error:", e)
     return web.Response(text="ok")
+
+# ===== CREATE APP =====
+app = web.Application()
+app.router.add_post(WEBHOOK_PATH, handle_webhook)
+app.on_startup.append(on_startup)
+app.on_cleanup.append(on_shutdown)
 
 # ===== RUN =====
 if __name__ == "__main__":
