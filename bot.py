@@ -2,6 +2,7 @@ import os
 import uuid
 import logging
 import asyncio
+import sys
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import (
@@ -14,7 +15,6 @@ from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from redis.asyncio import Redis
-import sys
 
 # ===== LOGGING =====
 logging.basicConfig(
@@ -213,12 +213,17 @@ async def fallback(message: types.Message, state: FSMContext):
     else:
         await message.answer("Натисни «➕ Додати товар»", reply_markup=main_kb)
 
-# ===== RUN BOT (polling) =====
+# ===== CLEAR WEBHOOK =====
+async def clear_webhook():
+    info = await bot.get_webhook_info()
+    if info.url:
+        logger.info(f"Удаляем старый webhook: {info.url}")
+        await bot.delete_webhook(drop_pending_updates=True)
+
+# ===== RUN BOT =====
 async def main():
     try:
-        logger.info("Удаляем старый webhook...")
-        await bot.delete_webhook(drop_pending_updates=True)
-        await asyncio.sleep(2)
+        await clear_webhook()  # удаляем webhook перед polling
         logger.info("Запускаем polling...")
         await dp.start_polling(bot)
     finally:
