@@ -220,7 +220,7 @@ WEBAPP_PORT = int(os.environ.get("PORT", 8080))
 def create_app():
     app = web.Application()
 
-    async def on_startup():
+    async def on_startup(app):
         info = await bot.get_webhook_info()
         current_url = info.url
         target_url = WEBHOOK_URL + WEBHOOK_PATH
