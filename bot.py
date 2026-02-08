@@ -1,5 +1,6 @@
 import os
 import uuid
+import traceback
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import (
@@ -220,6 +221,7 @@ def create_app():
             await dp.feed_update(update)
         except Exception as e:
             print("Webhook error:", e)
+            traceback.print_exc()
         return web.Response(text="ok")
 
     # Роутинг и хуки
