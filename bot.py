@@ -219,6 +219,7 @@ async def clear_webhook():
     if info.url:
         logger.info(f"Удаляем старый webhook: {info.url}")
         await bot.delete_webhook(drop_pending_updates=True)
+        await asyncio.sleep(1)  # даём Telegram секунду на очистку
 
 # ===== RUN BOT =====
 async def main():
