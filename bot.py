@@ -12,13 +12,14 @@ from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from redis.asyncio import Redis
-from aiogram import webhook
+from aiohttp import web
+from aiogram.types import Update
 
 # ===== СЕКРЕТЫ =====
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 REDIS_URL = os.getenv("REDIS_URL")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # вот сюда ссылка Fly
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # https://lenta-nahodok-bot.fly.dev
 
 if not all([TOKEN, CHANNEL_ID, REDIS_URL, WEBHOOK_URL]):
     raise RuntimeError("Не переданы секреты BOT_TOKEN, CHANNEL_ID, REDIS_URL или WEBHOOK_URL")
@@ -107,7 +108,7 @@ async def photos_step(message: types.Message, state: FSMContext):
     photos.append(message.photo[-1].file_id)
     await state.update_data(photo_ids=photos)
     sid = data["session_id"]
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
+    kb = InlineKeyboardMarkup(inline_keyboard=[[ 
         InlineKeyboardButton("➕ Ще фото", callback_data=f"more:{sid}"),
         InlineKeyboardButton("✅ Готово", callback_data=f"done:{sid}")
     ]])
@@ -140,7 +141,7 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
         f"💰 {data['price']}\n\n"
         f"👇 Подивитись та купити"
     )
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
+    kb = InlineKeyboardMarkup(inline_keyboard=[[ 
         InlineKeyboardButton("🛒 Подивитись та купити", url=data['link']),
         InlineKeyboardButton("✅ Опублікувати", callback_data=f"publish:{sid}"),
         InlineKeyboardButton("❌ Скасувати", callback_data=f"cancel:{sid}")
@@ -178,7 +179,7 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
         f"💰 {data['price']}\n\n"
         f"👇 Подивитись та купити"
     )
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
+    kb = InlineKeyboardMarkup(inline_keyboard=[[ 
         InlineKeyboardButton("🛒 Подивитись та купити", url=data['link'])
     ]])
     await bot.send_media_group(CHANNEL_ID, media=[types.InputMediaPhoto(media=p, caption=text if i==0 else None, parse_mode="HTML") for i, p in enumerate(photos)])
@@ -195,25 +196,29 @@ async def fallback(message: types.Message, state: FSMContext):
     else:
         await message.answer("Натисни «➕ Додати товар»", reply_markup=main_kb)
 
-# ===== WEBHOOK SETUP =====
+# ===== WEBHOOK =====
 WEBHOOK_PATH = "/webhook"
 WEBAPP_HOST = "0.0.0.0"
 WEBAPP_PORT = int(os.environ.get("PORT", 8080))
 
-async def on_startup():
+async def on_startup(app):
     await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
 
-async def on_shutdown():
+async def on_shutdown(app):
     await bot.delete_webhook()
     await storage.close()
     await storage.wait_closed()
     await bot.session.close()
 
+async def handle_webhook(request: web.Request):
+    data = await request.json()
+    update = Update(**data)
+    await dp.feed_update(update)
+    return web.Response(text="ok")
+
 if __name__ == "__main__":
-    from aiohttp import web
-
     app = web.Application()
-    # Добавляем aiogram обработчик вебхука
-    app.router.add_post(WEBHOOK_PATH, dp.update_handler)
-
-    web.run_app(app, host=WEBAPP_HOST, port=WEBAPP_PORT, shutdown_timeout=5)
+    app.router.add_post(WEBHOOK_PATH, handle_webhook)
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
+    web.run_app(app, host=WEBAPP_HOST, port=WEBAPP_PORT)
