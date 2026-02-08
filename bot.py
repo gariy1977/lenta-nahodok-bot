@@ -209,8 +209,7 @@ async def clear_webhook(bot: Bot):
 # ===== MAIN =====
 async def main():
     # ===== SSL и Redis =====
-    ssl_ctx = ssl.create_default_context()
-    redis_client = Redis.from_url(REDIS_URL, decode_responses=True, ssl=ssl_ctx)
+    redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
     storage = RedisStorage(redis=redis_client)
 
     # ===== BOT & DISPATCHER =====
