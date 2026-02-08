@@ -19,7 +19,7 @@ logger.info("Бот запускается...")
 # ===== SECRETS =====
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
-REDIS_URL = os.getenv("REDIS_URL")
+REDIS_URL = os.getenv("REDIS_URL")  # rediss://:<password>@host:6380
 
 if not all([TOKEN, CHANNEL_ID, REDIS_URL]):
     raise RuntimeError("Не переданы секреты BOT_TOKEN, CHANNEL_ID или REDIS_URL")
@@ -33,16 +33,27 @@ with open(LOCK_FILE, "w") as f:
     f.write(str(os.getpid()))
 
 # ===== REDIS STORAGE с SSL =====
-redis_client = Redis.from_url(
-    REDIS_URL,
-    decode_responses=True,
-    connection_class=SSLConnection  # вот это ключевое
-)
-storage = RedisStorage(redis=redis_client)
+async def create_redis():
+    while True:
+        try:
+            redis_client = Redis.from_url(
+                REDIS_URL,
+                decode_responses=True,
+                connection_class=SSLConnection
+            )
+            # Проверяем соединение
+            await redis_client.ping()
+            logger.info("✅ Redis подключен")
+            return redis_client
+        except Exception as e:
+            logger.error(f"Ошибка подключения к Redis: {e}. Пробуем снова через 5 сек...")
+            await asyncio.sleep(5)
 
 # ===== BOT & DISPATCHER =====
 bot = Bot(token=TOKEN)
-dp = Dispatcher(storage=storage)
+redis_client: Redis  # инициализация позже
+storage: RedisStorage  # инициализация позже
+dp: Dispatcher  # инициализация позже
 
 # ===== KEYBOARDS =====
 start_kb = ReplyKeyboardMarkup(
@@ -218,6 +229,11 @@ async def clear_webhook():
 
 # ===== RUN BOT =====
 async def main():
+    global redis_client, storage, dp
+    redis_client = await create_redis()
+    storage = RedisStorage(redis=redis_client)
+    dp = Dispatcher(storage=storage)
+    
     try:
         await clear_webhook()
         logger.info("Запускаем polling...")
