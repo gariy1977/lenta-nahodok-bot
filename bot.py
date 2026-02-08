@@ -49,7 +49,10 @@ async def start_btn(message: types.Message):
 # ===== ADD PRODUCT =====
 @dp.message(F.text == "➕ Додати товар")
 async def add_product(message: types.Message, state: FSMContext):
-    await state.clear()
+    # НЕ сбрасываем процесс, если он уже идёт
+    if await state.get_state():
+        await message.answer("⚠️ Ти вже додаєш товар. Заверши поточний.")
+        return
 
     sid = str(uuid.uuid4())
 
@@ -60,7 +63,6 @@ async def add_product(message: types.Message, state: FSMContext):
 
     await state.set_state(AddProduct.name)
     await message.answer("✏️ Введи назву товару:")
-
 # ===== NAME =====
 @dp.message(AddProduct.name, F.text)
 async def name_step(message: types.Message, state: FSMContext):
@@ -224,8 +226,10 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
 # ===== FALLBACK =====
 @dp.message()
 async def fallback(message: types.Message, state: FSMContext):
-    if await state.get_state():
-        await message.answer("⚠️ Йди по кроках. Заверши товар.")
+    current = await state.get_state()
+
+    if current:
+        await message.answer("⚠️ Продовжуй введення. Заверши товар.")
     else:
         await message.answer("Натисни «➕ Додати товар»", reply_markup=main_kb)
 
