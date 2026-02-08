@@ -32,7 +32,7 @@ with open(LOCK_FILE, "w") as f:
     f.write(str(os.getpid()))
 
 # ===== REDIS STORAGE =====
-redis_client = Redis.from_url(REDIS_URL, decode_responses=True, ssl=True)
+redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
 storage = RedisStorage(redis=redis_client)
 
 bot = Bot(token=TOKEN)
