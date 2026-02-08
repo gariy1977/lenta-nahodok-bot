@@ -2,6 +2,7 @@ import os
 import uuid
 import logging
 import asyncio
+import ssl
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
@@ -31,10 +32,16 @@ if os.path.exists(LOCK_FILE):
 with open(LOCK_FILE, "w") as f:
     f.write(str(os.getpid()))
 
-# ===== REDIS STORAGE =====
-redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
+# ===== REDIS STORAGE с SSL =====
+ssl_ctx = ssl.create_default_context()
+redis_client = Redis.from_url(
+    REDIS_URL,
+    decode_responses=True,
+    ssl=ssl_ctx
+)
 storage = RedisStorage(redis=redis_client)
 
+# ===== BOT & DISPATCHER =====
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=storage)
 
@@ -160,7 +167,7 @@ async def callback_handler(query: types.CallbackQuery, state: FSMContext):
                 parse_mode="HTML"
             )
         kb = InlineKeyboardMarkup(
-            inline_keyboard=[[
+            inline_keyboard=[[ 
                 InlineKeyboardButton(text="🛒 Подивитись та купити", url=data['link']),
                 InlineKeyboardButton(text="✅ Опублікувати", callback_data=f"publish:{sid}"),
                 InlineKeyboardButton(text="❌ Скасувати", callback_data=f"cancel:{sid}")
@@ -220,6 +227,8 @@ async def main():
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
+        await redis_client.close()
+        await storage.close()
         if os.path.exists(LOCK_FILE):
             os.remove(LOCK_FILE)
 
