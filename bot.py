@@ -205,14 +205,25 @@ async def fallback(message: types.Message, state: FSMContext):
 
 # ===== RUN BOT (polling) =====
 async def main():
-    # Удаляем старый webhook
+    """
+    Безопасный запуск бота через polling:
+    - удаляем старый webhook
+    - ждём пару секунд, чтобы Telegram успел применить изменения
+    - запускаем polling
+    """
+    logger.info("Удаляем старый webhook...")
     await bot.delete_webhook(drop_pending_updates=True)
-    logger.info("Webhook удален, запускаем polling...")
+    
+    logger.info("Webhook удален, ждём 2 секунды...")
+    await asyncio.sleep(2)
 
+    logger.info("Запускаем polling...")
     try:
         await dp.start_polling(bot)
     finally:
+        logger.info("Закрываем сессию бота...")
         await bot.session.close()
+
 
 if __name__ == "__main__":
     import asyncio
