@@ -10,8 +10,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 import asyncio, os, uuid
 
-TOKEN = os.getenv("BOT_TOKEN") or "YOUR_TOKEN"
-CHANNEL_ID = os.getenv("CHANNEL_ID") or "-100XXXXXXXXXX"
+TOKEN = os.getenv("BOT_TOKEN") or "8439066571:AAE80bkMrNF1J6jJwR2qumjkDSs0EPFGLfI"
+CHANNEL_ID = os.getenv("CHANNEL_ID") or "-1003571651319"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
