@@ -205,7 +205,6 @@ async def on_startup(app):
 
 async def on_shutdown(app):
     await bot.delete_webhook()
-    await storage.close()  # wait_closed() удаляем
     await bot.session.close()
     print("Webhook видалено, з’єднання закрито ✅")
 
