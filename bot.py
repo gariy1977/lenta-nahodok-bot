@@ -204,15 +204,16 @@ async def fallback(message: types.Message, state: FSMContext):
         await message.answer("Натисни «➕ Додати товар»", reply_markup=main_kb)
 
 # ===== RUN BOT (polling) =====
+async def main():
+    # Удаляем старый webhook
+    await bot.delete_webhook(drop_pending_updates=True)
+    logger.info("Webhook удален, запускаем polling...")
+
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
+
 if __name__ == "__main__":
-    logger.info("=== Запускаю бот через polling ===")
     import asyncio
-    from aiogram import exceptions
-    async def main():
-        try:
-            await dp.start_polling(bot)
-        except exceptions.TelegramAPIError as e:
-            logger.error(f"Telegram API error: {e}")
-        finally:
-            await bot.session.close()
     asyncio.run(main())
