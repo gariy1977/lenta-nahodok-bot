@@ -95,12 +95,17 @@ async def link_step(message: types.Message, state: FSMContext):
 # ===== PHOTOS =====
 @dp.message(AddProduct.photos, F.photo)
 async def photos_step(message: types.Message, state: FSMContext):
+    current = await state.get_state()
+
+    if current != AddProduct.photos.state:
+        await state.set_state(AddProduct.photos)
+
     data = await state.get_data()
-    photos = data.get("photo_ids", [])
-    photos.append(message.photo[-1].file_id)
 
-    await state.update_data(photo_ids=photos)
-
+    if "photo_ids" not in data:
+        await state.update_data(photo_ids=[])
+        data = await state.get_data()
+    await state.update_data(last_step="photos")
     sid = data["session_id"]
 
     kb = InlineKeyboardMarkup(
@@ -119,7 +124,8 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
     sid = data.get("session_id")
 
     if not sid:
-        await query.answer("⚠️ Сесія втрачена. Почни заново.", show_alert=True)
+        await state.set_state(AddProduct.photos)
+        await query.answer("⚠️ Стан відновлено. Натисни кнопку ще раз.")
         return
 
     action, callback_sid = query.data.split(":")
@@ -169,7 +175,7 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
         else:
             media.append(InputMediaPhoto(media=p))
 
-    await query.message.answer_media_group(media=media)
+    await query.message.answer("📸 Фото додано. Натисни «Готово»")
     await query.message.answer("Перевір товар 👇", reply_markup=kb)
     await query.answer()
 
@@ -229,28 +235,11 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
 async def fallback(message: types.Message, state: FSMContext):
     current = await state.get_state()
 
-    if current == AddProduct.name.state:
-        await message.answer("✏️ Введи назву товару:")
-        return
-
-    if current == AddProduct.description.state:
-        await message.answer("📝 Введи опис:")
-        return
-
-    if current == AddProduct.price.state:
-        await message.answer("💰 Вкажи ціну:")
-        return
-
-    if current == AddProduct.link.state:
-        await message.answer("🔗 Встав посилання:")
-        return
-
-    if current == AddProduct.photos.state:
-        await message.answer("📸 Надішли фото")
+    if current:
+        await message.answer("⚠️ Ти у процесі додавання товару. Продовжуй.")
         return
 
     await message.answer("Натисни «➕ Додати товар»", reply_markup=main_kb)
-
 # ===== RUN =====
 async def main():
     await dp.start_polling(bot)
