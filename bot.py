@@ -9,7 +9,7 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ===== Функция отправки товара =====
+# Отправка товара
 async def send_product(channel_id: str, photo_bytes: bytes, description: str, referral_url: str):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Подивитись та купити", url=referral_url)]
@@ -21,7 +21,7 @@ async def send_product(channel_id: str, photo_bytes: bytes, description: str, re
         reply_markup=keyboard
     )
 
-# ===== Обработчик команд =====
+# Обработчик сообщений
 @dp.message()
 async def handle_message(message: types.Message):
     if message.photo:
@@ -40,7 +40,7 @@ async def handle_message(message: types.Message):
     await send_product(CHANNEL_ID, photo, description, referral_url)
     await message.reply("Товар отправлен в канал ✅")
 
-# ===== Запуск бота =====
+# Запуск бота
 async def main():
     try:
         await dp.start_polling(bot)
