@@ -31,8 +31,16 @@ with open(LOCK_FILE, "w") as f:
     f.write(str(os.getpid()))
 
 # ===== KEYBOARDS =====
-start_kb = ReplyKeyboardMarkup([[KeyboardButton("▶️ Старт")]], resize_keyboard=True, one_time_keyboard=True)
-main_kb = ReplyKeyboardMarkup([[KeyboardButton("➕ Додати товар")]], resize_keyboard=True)
+start_kb = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="▶️ Старт")]],
+    resize_keyboard=True,
+    one_time_keyboard=True
+)
+
+main_kb = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="➕ Додати товар")]],
+    resize_keyboard=True
+)
 
 # ===== FSM =====
 class AddProduct(StatesGroup):
