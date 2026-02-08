@@ -205,14 +205,15 @@ def create_app():
 
     async def on_startup(app):
         print("=== Стартую бота ===")
+        # Ставим вебхук один раз
         await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
         print("Webhook встановлено ✅")
 
     async def on_cleanup(app):
         print("=== Завершаю бота ===")
-        await bot.delete_webhook()
+        # Не удаляем webhook, просто закрываем сессию
         await bot.session.close()
-        print("Webhook видалено ✅")
+        print("Сессия бота закрыта ✅")
 
     async def handle_webhook(request: web.Request):
         try:
@@ -233,6 +234,7 @@ def create_app():
 
 # --- Запуск ---
 if __name__ == "__main__":
-    app = create_app()  # создаём app здесь, гарантированно
+    app = create_app()
     print(f"=== Запускаю сервер на {WEBAPP_HOST}:{WEBAPP_PORT} ===")
+    # Гарантированно слушаем порт Fly
     web.run_app(app, host=WEBAPP_HOST, port=WEBAPP_PORT)
