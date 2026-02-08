@@ -219,8 +219,8 @@ async def handle_webhook(request: web.Request):
     return web.Response(text="ok")
 
 if __name__ == "__main__":
-    app = web.Application()
-    app.router.add_post(WEBHOOK_PATH, handle_webhook)
-    app.on_startup.append(on_startup)
-    app.on_shutdown.append(on_shutdown)
+    import asyncio
+    loop = asyncio.get_event_loop()
+    loop.create_task(bot.delete_webhook())
+    loop.create_task(bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH))
     web.run_app(app, host=WEBAPP_HOST, port=WEBAPP_PORT)
