@@ -1,6 +1,6 @@
+import os
 import asyncio
 import uuid
-import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import (
@@ -13,19 +13,18 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from redis.asyncio import Redis
 
-# ===== ENVIRONMENT =====
+# ===== СЕКРЕТЫ =====
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 REDIS_URL = os.getenv("REDIS_URL")
 
-if not TOKEN or not CHANNEL_ID or not REDIS_URL:
-    raise RuntimeError("⚠️ Задайте BOT_TOKEN, CHANNEL_ID та REDIS_URL у перемінних оточення!")
+if not all([TOKEN, CHANNEL_ID, REDIS_URL]):
+    raise RuntimeError("Не переданы секреты BOT_TOKEN, CHANNEL_ID или REDIS_URL")
 
 # ===== REDIS STORAGE =====
-redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
+redis_client = Redis.from_url(REDIS_URL, decode_responses=True, ssl=True)
 storage = RedisStorage(redis=redis_client)
 
-# ===== BOT & DISPATCHER =====
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=storage)
 
@@ -34,7 +33,6 @@ start_kb = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="▶️ Старт")]],
     resize_keyboard=True
 )
-
 main_kb = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="➕ Додати товар")]],
     resize_keyboard=True
@@ -66,7 +64,6 @@ async def add_product(message: types.Message, state: FSMContext):
     if await state.get_state():
         await message.answer("⚠️ Ти вже додаєш товар. Заверши поточний.")
         return
-
     sid = str(uuid.uuid4())
     await state.update_data(session_id=sid, photo_ids=[])
     await state.set_state(AddProduct.name)
@@ -107,12 +104,11 @@ async def photos_step(message: types.Message, state: FSMContext):
     photos = data.get("photo_ids", [])
     photos.append(message.photo[-1].file_id)
     await state.update_data(photo_ids=photos)
-
     sid = data["session_id"]
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton("➕ Ще фото", callback_data=f"more:{sid}"),
-        InlineKeyboardButton("✅ Готово", callback_data=f"done:{sid}")
-    ]])
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton("➕ Ще фото", callback_data=f"more:{sid}"),
+         InlineKeyboardButton("✅ Готово", callback_data=f"done:{sid}")]
+    ])
     await message.answer(f"📸 Додано фото: {len(photos)}", reply_markup=kb)
 
 # ===== PHOTO CALLBACK =====
@@ -123,24 +119,19 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
     if not sid:
         await query.answer("⚠️ Стан втрачено. Натисни ще раз.", show_alert=True)
         return
-
     action, callback_sid = query.data.split(":")
     if callback_sid != sid:
         await query.answer("⚠️ Старий товар", show_alert=True)
         return
-
     if action == "more":
         await query.message.answer("Надішли ще фото 📸")
         await query.answer()
         return
-
     photos = data.get("photo_ids", [])
     if not photos:
         await query.answer("❗ Додай хоча б одне фото", show_alert=True)
         return
-
     await state.set_state(AddProduct.preview)
-
     text = (
         f"<b>{data['name']}</b>\n\n"
         f"{data['description']}\n\n"
@@ -152,7 +143,7 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
         [InlineKeyboardButton("✅ Опублікувати", callback_data=f"publish:{sid}"),
          InlineKeyboardButton("❌ Скасувати", callback_data=f"cancel:{sid}")]
     ])
-    media = [InputMediaPhoto(media=p, caption=text, parse_mode="HTML") if i == 0 else InputMediaPhoto(media=p)
+    media = [types.InputMediaPhoto(media=p, caption=text, parse_mode="HTML") if i==0 else types.InputMediaPhoto(media=p)
              for i, p in enumerate(photos)]
     await query.message.answer_media_group(media=media)
     await query.message.answer("Перевір товар 👇", reply_markup=kb)
@@ -166,23 +157,19 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
     if not sid:
         await query.answer("⚠️ Сесія втрачена", show_alert=True)
         return
-
     action, callback_sid = query.data.split(":")
     if callback_sid != sid:
         await query.answer("⚠️ Старий товар", show_alert=True)
         return
-
     if action == "cancel":
         await state.clear()
         await query.message.answer("❌ Скасовано", reply_markup=main_kb)
         await query.answer()
         return
-
     photos = data.get("photo_ids", [])
     if not photos:
         await query.answer("❗ Немає фото", show_alert=True)
         return
-
     text = (
         f"<b>{data['name']}</b>\n\n"
         f"{data['description']}\n\n"
@@ -192,7 +179,7 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton("🛒 Подивитись та купити", url=data['link'])]
     ])
-    media = [InputMediaPhoto(media=p, caption=text, parse_mode="HTML") if i == 0 else InputMediaPhoto(media=p)
+    media = [types.InputMediaPhoto(media=p, caption=text, parse_mode="HTML") if i==0 else types.InputMediaPhoto(media=p)
              for i, p in enumerate(photos)]
     await bot.send_media_group(CHANNEL_ID, media=media)
     await state.clear()
@@ -210,7 +197,6 @@ async def fallback(message: types.Message, state: FSMContext):
 
 # ===== RUN =====
 async def main():
-    print("✅ Бот стартує...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
