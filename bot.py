@@ -8,15 +8,15 @@ from aiogram.types import (
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-import asyncio, os, uuid, aioredis
+from redis.asyncio import Redis
 
 TOKEN = os.getenv("BOT_TOKEN") or "8439066571:AAE80bkMrNF1J6jJwR2qumjkDSs0EPFGLfI"
 CHANNEL_ID = os.getenv("CHANNEL_ID") or "-1003571651319"
 REDIS_URL = os.getenv("REDIS_URL") or "redis://localhost:6379/0"
 
 # ===== REDIS STORAGE =====
-redis = aioredis.from_url(REDIS_URL, decode_responses=True)
-storage = RedisStorage(redis=redis)
+redis_client = Redis(host="localhost", port=6379, db=0)
+storage = RedisStorage(redis=redis_client)
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=storage)
