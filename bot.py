@@ -2,14 +2,13 @@ import os
 import uuid
 import logging
 import asyncio
-import ssl
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.storage.redis import RedisStorage
-from redis.asyncio import Redis
+from redis.asyncio import from_url as RedisFromURL
 
 # ===== LOGGING =====
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -19,7 +18,7 @@ logger.info("Бот запускается...")
 # ===== SECRETS =====
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
-REDIS_URL = os.getenv("REDIS_URL")
+REDIS_URL = os.getenv("REDIS_URL")  # Например: rediss://default:63b9cac5873c4abead1146f565ef7dff@fly-ra-redis.upstash.io:6379
 
 if not all([TOKEN, CHANNEL_ID, REDIS_URL]):
     raise RuntimeError("Не переданы секреты BOT_TOKEN, CHANNEL_ID или REDIS_URL")
@@ -111,10 +110,8 @@ def register_handlers(dp: Dispatcher):
         sid = data["session_id"]
 
         kb = InlineKeyboardMarkup(
-            inline_keyboard=[[
-                InlineKeyboardButton(text="➕ Ще фото", callback_data=f"more:{sid}"),
-                InlineKeyboardButton(text="✅ Готово", callback_data=f"done:{sid}")
-            ]]
+            inline_keyboard=[[InlineKeyboardButton(text="➕ Ще фото", callback_data=f"more:{sid}"),
+                              InlineKeyboardButton(text="✅ Готово", callback_data=f"done:{sid}")]]
         )
         await message.answer(f"📸 Додано фото: {len(photos)}", reply_markup=kb)
 
@@ -139,26 +136,14 @@ def register_handlers(dp: Dispatcher):
 
         if action == "done":
             await state.set_state(AddProduct.preview)
-            text = (
-                f"<b>{data['name']}</b>\n\n"
-                f"{data['description']}\n\n"
-                f"💰 {data['price']}\n\n"
-                f"👇 Подивитись та купити"
-            )
+            text = f"<b>{data['name']}</b>\n\n{data['description']}\n\n💰 {data['price']}\n\n👇 Подивитись та купити"
             photos = data.get("photo_ids", [])
             for i, p in enumerate(photos):
-                await bot.send_photo(
-                    chat_id=query.message.chat.id,
-                    photo=p,
-                    caption=text if i == 0 else None,
-                    parse_mode="HTML"
-                )
+                await bot.send_photo(chat_id=query.message.chat.id, photo=p, caption=text if i == 0 else None, parse_mode="HTML")
             kb = InlineKeyboardMarkup(
-                inline_keyboard=[[ 
-                    InlineKeyboardButton(text="🛒 Подивитись та купити", url=data['link']),
-                    InlineKeyboardButton(text="✅ Опублікувати", callback_data=f"publish:{sid}"),
-                    InlineKeyboardButton(text="❌ Скасувати", callback_data=f"cancel:{sid}")
-                ]]
+                inline_keyboard=[[InlineKeyboardButton(text="🛒 Подивитись та купити", url=data['link']),
+                                  InlineKeyboardButton(text="✅ Опублікувати", callback_data=f"publish:{sid}"),
+                                  InlineKeyboardButton(text="❌ Скасувати", callback_data=f"cancel:{sid}")]]
             )
             await query.message.answer("Перевір товар 👇", reply_markup=kb)
             await query.answer()
@@ -172,19 +157,9 @@ def register_handlers(dp: Dispatcher):
 
         if action == "publish":
             photos = data.get("photo_ids", [])
-            text = (
-                f"<b>{data['name']}</b>\n\n"
-                f"{data['description']}\n\n"
-                f"💰 {data['price']}\n\n"
-                f"👇 Подивитись та купити"
-            )
+            text = f"<b>{data['name']}</b>\n\n{data['description']}\n\n💰 {data['price']}\n\n👇 Подивитись та купити"
             for i, p in enumerate(photos):
-                await bot.send_photo(
-                    chat_id=CHANNEL_ID,
-                    photo=p,
-                    caption=text if i == 0 else None,
-                    parse_mode="HTML"
-                )
+                await bot.send_photo(chat_id=CHANNEL_ID, photo=p, caption=text if i == 0 else None, parse_mode="HTML")
             await state.clear()
             await query.message.answer("✅ Товар опубліковано!", reply_markup=main_kb)
             await query.answer()
@@ -208,8 +183,8 @@ async def clear_webhook(bot: Bot):
 
 # ===== MAIN =====
 async def main():
-    # ===== SSL и Redis =====
-    redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
+    # ===== REDIS =====
+    redis_client = RedisFromURL(REDIS_URL, decode_responses=True)
     storage = RedisStorage(redis=redis_client)
 
     # ===== BOT & DISPATCHER =====
