@@ -1,26 +1,16 @@
 import os
-import uuid
 import logging
 import asyncio
-import sys
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    ReplyKeyboardMarkup,
-    KeyboardButton
-)
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import StatesGroup, State
 from redis.asyncio import Redis
 
 # ===== LOGGING =====
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 logger.info("Бот запускается...")
 
@@ -32,15 +22,6 @@ REDIS_URL = os.getenv("REDIS_URL")
 if not all([TOKEN, CHANNEL_ID, REDIS_URL]):
     raise RuntimeError("Не переданы секреты BOT_TOKEN, CHANNEL_ID или REDIS_URL")
 
-# ===== SINGLE INSTANCE LOCK =====
-LOCK_FILE = "/tmp/ra_bot.lock"
-if os.path.exists(LOCK_FILE):
-    logger.warning("Бот уже запущен, выходим...")
-    sys.exit(0)
-
-with open(LOCK_FILE, "w") as f:
-    f.write(str(os.getpid()))
-
 # ===== REDIS STORAGE =====
 logger.info("Подключаем Redis...")
 redis_client = Redis.from_url(REDIS_URL, decode_responses=True, ssl=True)
@@ -50,27 +31,17 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=storage)
 
 # ===== KEYBOARDS =====
-start_kb = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="▶️ Старт")]],
-    resize_keyboard=True,
-    one_time_keyboard=True
-)
-
-main_kb = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="➕ Додати товар")]],
-    resize_keyboard=True
-)
+start_kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton("▶️ Старт")]], resize_keyboard=True, one_time_keyboard=True)
+main_kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton("➕ Додати товар")]], resize_keyboard=True)
 
 # ===== FSM =====
 class AddProduct(StatesGroup):
-    name = State()
     description = State()
-    price = State()
-    link = State()
-    photos = State()
+    referral_link = State()
+    media = State()
     preview = State()
 
-# ===== START HANDLERS =====
+# ===== START =====
 @dp.message(Command("start"))
 async def start(message: types.Message, state: FSMContext):
     await state.clear()
@@ -84,125 +55,68 @@ async def start_btn(message: types.Message, state: FSMContext):
 # ===== ADD PRODUCT =====
 @dp.message(lambda m: m.text == "➕ Додати товар")
 async def add_product(message: types.Message, state: FSMContext):
-    if await state.get_state():
-        await message.answer("⚠️ Ти вже додаєш товар. Заверши поточний.")
-        return
-    sid = str(uuid.uuid4())
-    await state.update_data(session_id=sid, photo_ids=[])
-    await state.set_state(AddProduct.name)
-    await message.answer("✏️ Введи назву товару:")
-
-# ===== FSM STEPS =====
-@dp.message(AddProduct.name, lambda m: m.text)
-async def name_step(message: types.Message, state: FSMContext):
-    await state.update_data(name=message.text.strip())
+    await state.update_data(media=None)
     await state.set_state(AddProduct.description)
-    await message.answer("📝 Введи опис:")
+    await message.answer("✏️ Введи опис товару:")
 
-@dp.message(AddProduct.description, lambda m: m.text)
-async def desc_step(message: types.Message, state: FSMContext):
+@dp.message(AddProduct.description)
+async def get_description(message: types.Message, state: FSMContext):
     await state.update_data(description=message.text.strip())
-    await state.set_state(AddProduct.price)
-    await message.answer("💰 Вкажи ціну:")
+    await state.set_state(AddProduct.referral_link)
+    await message.answer("🔗 Встав реферальну ссылку:")
 
-@dp.message(AddProduct.price, lambda m: m.text)
-async def price_step(message: types.Message, state: FSMContext):
-    await state.update_data(price=message.text.strip())
-    await state.set_state(AddProduct.link)
-    await message.answer("🔗 Встав посилання:")
+@dp.message(AddProduct.referral_link)
+async def get_link(message: types.Message, state: FSMContext):
+    await state.update_data(referral_link=message.text.strip())
+    await state.set_state(AddProduct.media)
+    await message.answer("📸 Надішли фото або відео:")
 
-@dp.message(AddProduct.link, lambda m: m.text)
-async def link_step(message: types.Message, state: FSMContext):
-    await state.update_data(link=message.text.strip())
-    await state.set_state(AddProduct.photos)
-    await message.answer("📸 Надішли фото. Коли все — натисни ✅ Готово.")
-
-@dp.message(AddProduct.photos, lambda m: m.photo)
-async def photos_step(message: types.Message, state: FSMContext):
+@dp.message(AddProduct.media, content_types=types.ContentType.PHOTO | types.ContentType.VIDEO)
+async def get_media(message: types.Message, state: FSMContext):
+    await state.update_data(media=message)
     data = await state.get_data()
-    photos = data.get("photo_ids", [])
-    photos.append(message.photo[-1].file_id)
-    await state.update_data(photo_ids=photos)
-    sid = data["session_id"]
 
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[[ 
-            InlineKeyboardButton(text="➕ Ще фото", callback_data=f"more:{sid}"),
-            InlineKeyboardButton(text="✅ Готово", callback_data=f"done:{sid}")
-        ]]
-    )
-    await message.answer(f"📸 Додано фото: {len(photos)}", reply_markup=kb)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Опублікувати", callback_data="publish"),
+         InlineKeyboardButton(text="❌ Відмінити", callback_data="cancel")]
+    ])
 
-# ===== CALLBACK HANDLER =====
-@dp.callback_query(lambda c: c.data.startswith(("more:", "done:", "publish:", "cancel:")))
-async def callback_handler(query: types.CallbackQuery, state: FSMContext):
+    if message.photo:
+        file_id = message.photo[-1].file_id
+        await message.answer_photo(file_id, caption=data["description"], reply_markup=kb)
+    elif message.video:
+        file_id = message.video.file_id
+        await message.answer_video(file_id, caption=data["description"], reply_markup=kb)
+
+    await state.set_state(AddProduct.preview)
+
+# ===== CALLBACK =====
+@dp.callback_query()
+async def handle_callback(call: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    sid = data.get("session_id")
-    if not sid:
-        await query.answer("⚠️ Сесія втрачена", show_alert=True)
-        return
+    media_msg = data.get("media")
 
-    action, callback_sid = query.data.split(":")
-    if callback_sid != sid:
-        await query.answer("⚠️ Старий товар", show_alert=True)
-        return
+    if call.data == "publish":
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Подивитись та купити", url=data["referral_link"])]
+        ])
+        if media_msg.photo:
+            file_id = media_msg.photo[-1].file_id
+            await bot.send_photo(CHANNEL_ID, file_id, caption=data["description"], reply_markup=kb)
+        elif media_msg.video:
+            file_id = media_msg.video.file_id
+            await bot.send_video(CHANNEL_ID, file_id, caption=data["description"], reply_markup=kb)
 
-    if action == "more":
-        await query.message.answer("Надішли ще фото 📸")
-        await query.answer()
-        return
-
-    if action == "done":
-        await state.set_state(AddProduct.preview)
-        text = (
-            f"<b>{data['name']}</b>\n\n"
-            f"{data['description']}\n\n"
-            f"💰 {data['price']}\n\n"
-            f"👇 Подивитись та купити"
-        )
-        photos = data.get("photo_ids", [])
-        for i, p in enumerate(photos):
-            await bot.send_photo(
-                chat_id=query.message.chat.id,
-                photo=p,
-                caption=text if i == 0 else None,
-                parse_mode="HTML"
-            )
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[[ 
-                InlineKeyboardButton(text="🛒 Подивитись та купити", url=data['link']),
-                InlineKeyboardButton(text="✅ Опублікувати", callback_data=f"publish:{sid}"),
-                InlineKeyboardButton(text="❌ Скасувати", callback_data=f"cancel:{sid}")
-            ]]
-        )
-        await query.message.answer("Перевір товар 👇", reply_markup=kb)
-        await query.answer()
-        return
-
-    if action == "cancel":
+        await call.message.edit_text("✅ Товар опубліковано!", reply_markup=main_kb)
         await state.clear()
-        await query.message.answer("❌ Скасовано", reply_markup=main_kb)
-        await query.answer()
+        await call.answer()
         return
 
-    if action == "publish":
-        photos = data.get("photo_ids", [])
-        text = (
-            f"<b>{data['name']}</b>\n\n"
-            f"{data['description']}\n\n"
-            f"💰 {data['price']}\n\n"
-            f"👇 Подивитись та купити"
-        )
-        for i, p in enumerate(photos):
-            await bot.send_photo(
-                chat_id=CHANNEL_ID,
-                photo=p,
-                caption=text if i == 0 else None,
-                parse_mode="HTML"
-            )
+    if call.data == "cancel":
+        await call.message.edit_text("❌ Додавання товару скасовано", reply_markup=main_kb)
         await state.clear()
-        await query.message.answer("✅ Товар опубліковано!", reply_markup=main_kb)
-        await query.answer()
+        await call.answer()
+        return
 
 # ===== FALLBACK =====
 @dp.message()
@@ -213,25 +127,10 @@ async def fallback(message: types.Message, state: FSMContext):
     else:
         await message.answer("Натисни «➕ Додати товар»", reply_markup=main_kb)
 
-# ===== CLEAR WEBHOOK =====
-async def clear_webhook():
-    info = await bot.get_webhook_info()
-    if info.url:
-        logger.info(f"Удаляем старый webhook: {info.url}")
-        await bot.delete_webhook(drop_pending_updates=True)
-        await asyncio.sleep(1)  # даём Telegram секунду на очистку
-
 # ===== RUN BOT =====
 async def main():
-    try:
-        await clear_webhook()  # удаляем webhook перед polling
-        logger.info("Запускаем polling...")
-        await dp.start_polling(bot)
-    finally:
-        logger.info("Закрываем сессию бота и удаляем lock...")
-        await bot.session.close()
-        if os.path.exists(LOCK_FILE):
-            os.remove(LOCK_FILE)
+    logger.info("Запускаем polling...")
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
