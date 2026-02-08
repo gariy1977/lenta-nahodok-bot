@@ -2,7 +2,6 @@ import os
 import uuid
 import logging
 import asyncio
-import ssl
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
@@ -10,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
+from redis.asyncio.connection import SSLConnection
 
 # ===== LOGGING =====
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -33,11 +33,10 @@ with open(LOCK_FILE, "w") as f:
     f.write(str(os.getpid()))
 
 # ===== REDIS STORAGE с SSL =====
-ssl_ctx = ssl.create_default_context()
 redis_client = Redis.from_url(
     REDIS_URL,
     decode_responses=True,
-    ssl=ssl_ctx
+    connection_class=SSLConnection  # вот это ключевое
 )
 storage = RedisStorage(redis=redis_client)
 
@@ -122,12 +121,10 @@ async def photos_step(message: types.Message, state: FSMContext):
     sid = data["session_id"]
 
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="➕ Ще фото", callback_data=f"more:{sid}"),
-                InlineKeyboardButton(text="✅ Готово", callback_data=f"done:{sid}")
-            ]
-        ]
+        inline_keyboard=[[
+            InlineKeyboardButton(text="➕ Ще фото", callback_data=f"more:{sid}"),
+            InlineKeyboardButton(text="✅ Готово", callback_data=f"done:{sid}")
+        ]]
     )
     await message.answer(f"📸 Додано фото: {len(photos)}", reply_markup=kb)
 
