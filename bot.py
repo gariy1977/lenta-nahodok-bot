@@ -113,12 +113,10 @@ async def photos_step(message: types.Message, state: FSMContext):
     sid = data["session_id"]
 
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="➕ Ще фото", callback_data=f"more:{sid}"),
-                InlineKeyboardButton(text="✅ Готово", callback_data=f"done:{sid}")
-            ]
-        ]
+        inline_keyboard=[[
+            InlineKeyboardButton(text="➕ Ще фото", callback_data=f"more:{sid}"),
+            InlineKeyboardButton(text="✅ Готово", callback_data=f"done:{sid}")
+        ]]
     )
     await message.answer(f"📸 Додано фото: {len(photos)}", reply_markup=kb)
 
@@ -152,13 +150,11 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
         f"👇 Подивитись та купити"
     )
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="🛒 Подивитись та купити", url=data['link']),
-                InlineKeyboardButton(text="✅ Опублікувати", callback_data=f"publish:{sid}"),
-                InlineKeyboardButton(text="❌ Скасувати", callback_data=f"cancel:{sid}")
-            ]
-        ]
+        inline_keyboard=[[
+            InlineKeyboardButton(text="🛒 Подивитись та купити", url=data['link']),
+            InlineKeyboardButton(text="✅ Опублікувати", callback_data=f"publish:{sid}"),
+            InlineKeyboardButton(text="❌ Скасувати", callback_data=f"cancel:{sid}")
+        ]]
     )
     media = [
         InputMediaPhoto(media=p, caption=text, parse_mode="HTML") if i == 0 else InputMediaPhoto(media=p)
