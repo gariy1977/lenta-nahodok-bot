@@ -1,19 +1,17 @@
 import os
-import asyncio
 import uuid
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import (
     InlineKeyboardButton, InlineKeyboardMarkup,
     ReplyKeyboardMarkup, KeyboardButton,
-    InputMediaPhoto
+    InputMediaPhoto, Update
 )
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from redis.asyncio import Redis
 from aiohttp import web
-from aiogram.types import Update
 
 # ===== СЕКРЕТЫ =====
 TOKEN = os.getenv("BOT_TOKEN")
@@ -203,17 +201,22 @@ WEBAPP_PORT = int(os.environ.get("PORT", 8080))
 
 async def on_startup(app):
     await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
+    print("Webhook встановлено ✅")
 
 async def on_shutdown(app):
     await bot.delete_webhook()
     await storage.close()
     await storage.wait_closed()
     await bot.session.close()
+    print("Webhook видалено, з’єднання закрито ✅")
 
 async def handle_webhook(request: web.Request):
-    data = await request.json()
-    update = Update(**data)
-    await dp.feed_update(update)
+    try:
+        data = await request.json()
+        update = Update(**data)
+        await dp.feed_update(update)
+    except Exception as e:
+        print("Webhook error:", e)
     return web.Response(text="ok")
 
 if __name__ == "__main__":
