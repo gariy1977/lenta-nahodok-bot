@@ -220,7 +220,7 @@ WEBAPP_PORT = int(os.environ.get("PORT", 8080))
 def create_app():
     app = web.Application()
 
-    async def on_startup(app):
+    async def on_startup(app: web.Application):
         info = await bot.get_webhook_info()
         current_url = info.url
         target_url = WEBHOOK_URL + WEBHOOK_PATH
@@ -234,7 +234,7 @@ def create_app():
                 await asyncio.sleep(e.timeout)
                 await bot.set_webhook(target_url)
 
-    async def on_cleanup(app):
+    async def on_cleanup(app: web.Application):
         print("=== Завершаю бота ===")
         await bot.session.close()
         print("Сессия бота закрыта ✅")
