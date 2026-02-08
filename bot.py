@@ -12,14 +12,16 @@ from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from redis.asyncio import Redis
+from aiogram import webhook
 
 # ===== СЕКРЕТЫ =====
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 REDIS_URL = os.getenv("REDIS_URL")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # вот сюда ссылка Fly
 
-if not all([TOKEN, CHANNEL_ID, REDIS_URL]):
-    raise RuntimeError("Не переданы секреты BOT_TOKEN, CHANNEL_ID или REDIS_URL")
+if not all([TOKEN, CHANNEL_ID, REDIS_URL, WEBHOOK_URL]):
+    raise RuntimeError("Не переданы секреты BOT_TOKEN, CHANNEL_ID, REDIS_URL или WEBHOOK_URL")
 
 # ===== REDIS STORAGE =====
 redis_client = Redis.from_url(REDIS_URL, decode_responses=True, ssl=True)
@@ -105,10 +107,10 @@ async def photos_step(message: types.Message, state: FSMContext):
     photos.append(message.photo[-1].file_id)
     await state.update_data(photo_ids=photos)
     sid = data["session_id"]
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton("➕ Ще фото", callback_data=f"more:{sid}"),
-         InlineKeyboardButton("✅ Готово", callback_data=f"done:{sid}")]
-    ])
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton("➕ Ще фото", callback_data=f"more:{sid}"),
+        InlineKeyboardButton("✅ Готово", callback_data=f"done:{sid}")
+    ]])
     await message.answer(f"📸 Додано фото: {len(photos)}", reply_markup=kb)
 
 # ===== PHOTO CALLBACK =====
@@ -138,11 +140,11 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
         f"💰 {data['price']}\n\n"
         f"👇 Подивитись та купити"
     )
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton("🛒 Подивитись та купити", url=data['link'])],
-        [InlineKeyboardButton("✅ Опублікувати", callback_data=f"publish:{sid}"),
-         InlineKeyboardButton("❌ Скасувати", callback_data=f"cancel:{sid}")]
-    ])
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton("🛒 Подивитись та купити", url=data['link']),
+        InlineKeyboardButton("✅ Опублікувати", callback_data=f"publish:{sid}"),
+        InlineKeyboardButton("❌ Скасувати", callback_data=f"cancel:{sid}")
+    ]])
     media = [types.InputMediaPhoto(media=p, caption=text, parse_mode="HTML") if i==0 else types.InputMediaPhoto(media=p)
              for i, p in enumerate(photos)]
     await query.message.answer_media_group(media=media)
@@ -176,12 +178,10 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
         f"💰 {data['price']}\n\n"
         f"👇 Подивитись та купити"
     )
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton("🛒 Подивитись та купити", url=data['link'])]
-    ])
-    media = [types.InputMediaPhoto(media=p, caption=text, parse_mode="HTML") if i==0 else types.InputMediaPhoto(media=p)
-             for i, p in enumerate(photos)]
-    await bot.send_media_group(CHANNEL_ID, media=media)
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton("🛒 Подивитись та купити", url=data['link'])
+    ]])
+    await bot.send_media_group(CHANNEL_ID, media=[types.InputMediaPhoto(media=p, caption=text if i==0 else None, parse_mode="HTML") for i, p in enumerate(photos)])
     await state.clear()
     await query.message.answer("✅ Товар опубліковано!", reply_markup=main_kb)
     await query.answer()
@@ -195,9 +195,25 @@ async def fallback(message: types.Message, state: FSMContext):
     else:
         await message.answer("Натисни «➕ Додати товар»", reply_markup=main_kb)
 
-# ===== RUN =====
-async def main():
-    await dp.start_polling(bot)
+# ===== WEBHOOK SETUP =====
+WEBHOOK_PATH = "/webhook"
+WEBAPP_HOST = "0.0.0.0"
+WEBAPP_PORT = int(os.environ.get("PORT", 8080))
+
+async def on_startup():
+    await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
+
+async def on_shutdown():
+    await bot.delete_webhook()
+    await storage.close()
+    await storage.wait_closed()
+    await bot.session.close()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    from aiohttp import web
+
+    app = web.Application()
+    # Добавляем aiogram обработчик вебхука
+    app.router.add_post(WEBHOOK_PATH, dp.update_handler)
+
+    web.run_app(app, host=WEBAPP_HOST, port=WEBAPP_PORT, shutdown_timeout=5)
