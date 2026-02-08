@@ -1,20 +1,20 @@
 import os
 import uuid
 import logging
+import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
-    KeyboardButton,
-    InputMediaPhoto
+    KeyboardButton
 )
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from redis.asyncio import Redis
-import asyncio
+import sys
 
 # ===== LOGGING =====
 logging.basicConfig(
@@ -32,6 +32,15 @@ REDIS_URL = os.getenv("REDIS_URL")
 if not all([TOKEN, CHANNEL_ID, REDIS_URL]):
     raise RuntimeError("Не переданы секреты BOT_TOKEN, CHANNEL_ID или REDIS_URL")
 
+# ===== SINGLE INSTANCE LOCK =====
+LOCK_FILE = "/tmp/ra_bot.lock"
+if os.path.exists(LOCK_FILE):
+    logger.warning("Бот уже запущен, выходим...")
+    sys.exit(0)
+
+with open(LOCK_FILE, "w") as f:
+    f.write(str(os.getpid()))
+
 # ===== REDIS STORAGE =====
 logger.info("Подключаем Redis...")
 redis_client = Redis.from_url(REDIS_URL, decode_responses=True, ssl=True)
@@ -46,6 +55,7 @@ start_kb = ReplyKeyboardMarkup(
     resize_keyboard=True,
     one_time_keyboard=True
 )
+
 main_kb = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="➕ Додати товар")]],
     resize_keyboard=True
@@ -60,7 +70,7 @@ class AddProduct(StatesGroup):
     photos = State()
     preview = State()
 
-# ===== START =====
+# ===== START HANDLERS =====
 @dp.message(Command("start"))
 async def start(message: types.Message, state: FSMContext):
     await state.clear()
@@ -82,7 +92,7 @@ async def add_product(message: types.Message, state: FSMContext):
     await state.set_state(AddProduct.name)
     await message.answer("✏️ Введи назву товару:")
 
-# ===== STEPS =====
+# ===== FSM STEPS =====
 @dp.message(AddProduct.name, lambda m: m.text)
 async def name_step(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text.strip())
@@ -123,7 +133,7 @@ async def photos_step(message: types.Message, state: FSMContext):
     )
     await message.answer(f"📸 Додано фото: {len(photos)}", reply_markup=kb)
 
-# ===== CALLBACK =====
+# ===== CALLBACK HANDLER =====
 @dp.callback_query(lambda c: c.data.startswith(("more:", "done:", "publish:", "cancel:")))
 async def callback_handler(query: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -131,6 +141,7 @@ async def callback_handler(query: types.CallbackQuery, state: FSMContext):
     if not sid:
         await query.answer("⚠️ Сесія втрачена", show_alert=True)
         return
+
     action, callback_sid = query.data.split(":")
     if callback_sid != sid:
         await query.answer("⚠️ Старий товар", show_alert=True)
@@ -150,7 +161,6 @@ async def callback_handler(query: types.CallbackQuery, state: FSMContext):
             f"👇 Подивитись та купити"
         )
         photos = data.get("photo_ids", [])
-        # Публикуем по одному, чтобы не перегружать память
         for i, p in enumerate(photos):
             await bot.send_photo(
                 chat_id=query.message.chat.id,
@@ -205,26 +215,17 @@ async def fallback(message: types.Message, state: FSMContext):
 
 # ===== RUN BOT (polling) =====
 async def main():
-    """
-    Безопасный запуск бота через polling:
-    - удаляем старый webhook
-    - ждём пару секунд, чтобы Telegram успел применить изменения
-    - запускаем polling
-    """
-    logger.info("Удаляем старый webhook...")
-    await bot.delete_webhook(drop_pending_updates=True)
-    
-    logger.info("Webhook удален, ждём 2 секунды...")
-    await asyncio.sleep(2)
-
-    logger.info("Запускаем polling...")
     try:
+        logger.info("Удаляем старый webhook...")
+        await bot.delete_webhook(drop_pending_updates=True)
+        await asyncio.sleep(2)
+        logger.info("Запускаем polling...")
         await dp.start_polling(bot)
     finally:
-        logger.info("Закрываем сессию бота...")
+        logger.info("Закрываем сессию бота и удаляем lock...")
         await bot.session.close()
-
+        if os.path.exists(LOCK_FILE):
+            os.remove(LOCK_FILE)
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
