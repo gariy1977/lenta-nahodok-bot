@@ -194,10 +194,13 @@ async def fallback(message: types.Message, state: FSMContext):
     else:
         await message.answer("Натисни «➕ Додати товар»", reply_markup=main_kb)
 
-# ===== WEBHOOK =====
+# === WEBHOOK & APP ===
 WEBHOOK_PATH = "/webhook"
 WEBAPP_HOST = "0.0.0.0"
 WEBAPP_PORT = int(os.environ.get("PORT", 8080))
+
+# Создаём приложение **до** запуска
+app = web.Application()
 
 async def on_startup(app):
     await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
@@ -217,12 +220,11 @@ async def handle_webhook(request: web.Request):
         print("Webhook error:", e)
     return web.Response(text="ok")
 
-# ===== CREATE APP =====
-app = web.Application()
+# Привязываем роут и хуки
 app.router.add_post(WEBHOOK_PATH, handle_webhook)
 app.on_startup.append(on_startup)
 app.on_cleanup.append(on_shutdown)
 
-# ===== RUN =====
+# Запускаем
 if __name__ == "__main__":
     web.run_app(app, host=WEBAPP_HOST, port=WEBAPP_PORT)
