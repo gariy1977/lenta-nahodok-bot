@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-import os 
+import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import (
@@ -13,14 +13,19 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from redis.asyncio import Redis
 
-TOKEN = os.getenv("BOT_TOKEN") or "8439066571:AAE80bkMrNF1J6jJwR2qumjkDSs0EPFGLfI"
-CHANNEL_ID = os.getenv("CHANNEL_ID") or "-1003571651319"
-REDIS_URL = os.getenv("REDIS_URL") or "rediss://default:63b9cac5873c4abead1146f565ef7dff@fly-ra-redis.upstash.io:6379"
+# ===== ENVIRONMENT =====
+TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
+REDIS_URL = os.getenv("REDIS_URL")
+
+if not TOKEN or not CHANNEL_ID or not REDIS_URL:
+    raise RuntimeError("⚠️ Задайте BOT_TOKEN, CHANNEL_ID та REDIS_URL у перемінних оточення!")
 
 # ===== REDIS STORAGE =====
-redis_client = Redis.from_url(REDIS_URL, decode_responses=True, ssl=True)
+redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
 storage = RedisStorage(redis=redis_client)
 
+# ===== BOT & DISPATCHER =====
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=storage)
 
@@ -104,10 +109,10 @@ async def photos_step(message: types.Message, state: FSMContext):
     await state.update_data(photo_ids=photos)
 
     sid = data["session_id"]
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton("➕ Ще фото", callback_data=f"more:{sid}"),
-         InlineKeyboardButton("✅ Готово", callback_data=f"done:{sid}")]
-    ])
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton("➕ Ще фото", callback_data=f"more:{sid}"),
+        InlineKeyboardButton("✅ Готово", callback_data=f"done:{sid}")
+    ]])
     await message.answer(f"📸 Додано фото: {len(photos)}", reply_markup=kb)
 
 # ===== PHOTO CALLBACK =====
@@ -115,7 +120,6 @@ async def photos_step(message: types.Message, state: FSMContext):
 async def photo_callback(query: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     sid = data.get("session_id")
-
     if not sid:
         await query.answer("⚠️ Стан втрачено. Натисни ще раз.", show_alert=True)
         return
@@ -143,14 +147,12 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
         f"💰 {data['price']}\n\n"
         f"👇 Подивитись та купити"
     )
-
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton("🛒 Подивитись та купити", url=data['link'])],
         [InlineKeyboardButton("✅ Опублікувати", callback_data=f"publish:{sid}"),
          InlineKeyboardButton("❌ Скасувати", callback_data=f"cancel:{sid}")]
     ])
-
-    media = [InputMediaPhoto(media=p, caption=text, parse_mode="HTML") if i==0 else InputMediaPhoto(media=p)
+    media = [InputMediaPhoto(media=p, caption=text, parse_mode="HTML") if i == 0 else InputMediaPhoto(media=p)
              for i, p in enumerate(photos)]
     await query.message.answer_media_group(media=media)
     await query.message.answer("Перевір товар 👇", reply_markup=kb)
@@ -190,8 +192,7 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton("🛒 Подивитись та купити", url=data['link'])]
     ])
-
-    media = [InputMediaPhoto(media=p, caption=text, parse_mode="HTML") if i==0 else InputMediaPhoto(media=p)
+    media = [InputMediaPhoto(media=p, caption=text, parse_mode="HTML") if i == 0 else InputMediaPhoto(media=p)
              for i, p in enumerate(photos)]
     await bot.send_media_group(CHANNEL_ID, media=media)
     await state.clear()
@@ -209,6 +210,7 @@ async def fallback(message: types.Message, state: FSMContext):
 
 # ===== RUN =====
 async def main():
+    print("✅ Бот стартує...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
