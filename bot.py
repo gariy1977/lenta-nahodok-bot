@@ -46,10 +46,14 @@ async def start(message: types.Message, state: FSMContext):
 async def start_btn(message: types.Message):
     await message.answer("Готово. Додавай товар 👇", reply_markup=main_kb)
 
-# ===== NEW PRODUCT SESSION =====
+# ===== SAFE ADD PRODUCT =====
 @dp.message(F.text == "➕ Додати товар")
 async def add_product(message: types.Message, state: FSMContext):
-    await state.clear()
+    # ❗ НЕ даём сбросить процесс, если он уже идёт
+    if await state.get_state():
+        await message.answer("⚠️ Ти вже додаєш товар. Заверши або дочекайся кінця.")
+        return
+
     session_id = str(uuid.uuid4())
 
     await state.update_data(
@@ -100,7 +104,7 @@ async def photos_step(message: types.Message, state: FSMContext):
     sid = data["session_id"]
 
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[[
+        inline_keyboard=[[ 
             InlineKeyboardButton(text="➕ Ще фото", callback_data=f"more:{sid}"),
             InlineKeyboardButton(text="✅ Готово", callback_data=f"done:{sid}")
         ]]
@@ -114,15 +118,18 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     sid = data.get("session_id")
 
+    if not sid:
+        await query.answer("⚠️ Сесія втрачена. Почни заново.", show_alert=True)
+        return
+
     action, callback_sid = query.data.split(":")
 
-    # IGNORE OLD CALLBACKS
     if callback_sid != sid:
-        await query.answer("⚠️ Це старий товар", show_alert=True)
+        await query.answer("⚠️ Старий товар", show_alert=True)
         return
 
     if await state.get_state() != AddProduct.photos.state:
-        await query.answer("⚠️ Етап вже завершено", show_alert=True)
+        await query.answer("⚠️ Етап фото завершено", show_alert=True)
         return
 
     if action == "more":
@@ -130,7 +137,6 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
         await query.answer()
         return
 
-    # DONE PHOTOS
     photos = data.get("photo_ids", [])
     if not photos:
         await query.answer("❗ Додай хоча б одне фото", show_alert=True)
@@ -165,9 +171,12 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     sid = data.get("session_id")
 
+    if not sid:
+        await query.answer("⚠️ Сесія втрачена", show_alert=True)
+        return
+
     action, callback_sid = query.data.split(":")
 
-    # IGNORE OLD CALLBACKS
     if callback_sid != sid:
         await query.answer("⚠️ Старий товар", show_alert=True)
         return
@@ -201,11 +210,13 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
     await query.message.answer("✅ Товар опубліковано!", reply_markup=main_kb)
     await query.answer()
 
-# ===== FALLBACK =====
+# ===== FALLBACK SAFE =====
 @dp.message()
 async def fallback(message: types.Message, state: FSMContext):
-    if await state.get_state():
-        await message.answer("⚠️ Відповідай по етапу або натисни «➕ Додати товар»")
+    current = await state.get_state()
+
+    if current:
+        await message.answer("⚠️ Ти вже додаєш товар. Відповідай по кроку.")
     else:
         await message.answer("Натисни «➕ Додати товар»", reply_markup=main_kb)
 
