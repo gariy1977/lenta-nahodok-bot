@@ -199,34 +199,38 @@ WEBHOOK_PATH = "/webhook"
 WEBAPP_HOST = "0.0.0.0"
 WEBAPP_PORT = int(os.environ.get("PORT", 8080))
 
-app = web.Application()
+def create_app():
+    app = web.Application()
 
-async def on_startup(app):
-    print("=== Стартую бота ===")
-    await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
-    print("Webhook встановлено ✅")
+    async def on_startup(app):
+        print("=== Стартую бота ===")
+        await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
+        print("Webhook встановлено ✅")
 
-async def on_cleanup(app):
-    print("=== Завершаю бота ===")
-    await bot.delete_webhook()
-    await bot.session.close()
-    print("Webhook видалено ✅")
+    async def on_cleanup(app):
+        print("=== Завершаю бота ===")
+        await bot.delete_webhook()
+        await bot.session.close()
+        print("Webhook видалено ✅")
 
-async def handle_webhook(request: web.Request):
-    try:
-        data = await request.json()
-        update = Update(**data)
-        await dp.feed_update(update)
-    except Exception as e:
-        print("Webhook error:", e)
-    return web.Response(text="ok")
+    async def handle_webhook(request: web.Request):
+        try:
+            data = await request.json()
+            update = Update(**data)
+            await dp.feed_update(update)
+        except Exception as e:
+            print("Webhook error:", e)
+        return web.Response(text="ok")
 
-# --- Роутинг и хуки ---
-app.router.add_post(WEBHOOK_PATH, handle_webhook)
-app.on_startup.append(on_startup)
-app.on_cleanup.append(on_cleanup)
+    # Роутинг и хуки
+    app.router.add_post(WEBHOOK_PATH, handle_webhook)
+    app.on_startup.append(on_startup)
+    app.on_cleanup.append(on_cleanup)
+
+    return app
 
 # --- Запуск ---
 if __name__ == "__main__":
+    app = create_app()  # создаём app здесь, гарантированно
     print(f"=== Запускаю сервер на {WEBAPP_HOST}:{WEBAPP_PORT} ===")
     web.run_app(app, host=WEBAPP_HOST, port=WEBAPP_PORT)
