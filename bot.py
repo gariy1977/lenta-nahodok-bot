@@ -3,14 +3,10 @@ import uuid
 import traceback
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import (
-    InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup, KeyboardButton,
-    InputMediaPhoto, Update
-)
-from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.fsm.context import FSMContext
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, InputMediaPhoto, Update
 from aiogram.fsm.state import StatesGroup, State
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
 from aiohttp import web
 
@@ -24,21 +20,16 @@ if not all([TOKEN, CHANNEL_ID, REDIS_URL, WEBHOOK_URL]):
     raise RuntimeError("Не переданы секреты BOT_TOKEN, CHANNEL_ID, REDIS_URL или WEBHOOK_URL")
 
 # ===== REDIS STORAGE =====
-redis_client = Redis.from_url(REDIS_URL, decode_responses=True, ssl=True)
+# Убираем ssl=True, Redis сам определит по URL
+redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
 storage = RedisStorage(redis=redis_client)
 
-bot = Bot(token=TOKEN)
+bot = Bot(token=TOKEN, parse_mode="HTML")
 dp = Dispatcher(storage=storage)
 
 # ===== KEYBOARDS =====
-start_kb = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="▶️ Старт")]],
-    resize_keyboard=True
-)
-main_kb = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="➕ Додати товар")]],
-    resize_keyboard=True
-)
+start_kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton("▶️ Старт")]], resize_keyboard=True)
+main_kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton("➕ Додати товар")]], resize_keyboard=True)
 
 # ===== FSM =====
 class AddProduct(StatesGroup):
@@ -71,35 +62,31 @@ async def add_product(message: types.Message, state: FSMContext):
     await state.set_state(AddProduct.name)
     await message.answer("✏️ Введи назву товару:")
 
-# ===== NAME =====
+# ===== STEPS =====
 @dp.message(AddProduct.name, F.text)
 async def name_step(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text.strip())
     await state.set_state(AddProduct.description)
     await message.answer("📝 Введи опис:")
 
-# ===== DESCRIPTION =====
 @dp.message(AddProduct.description, F.text)
 async def desc_step(message: types.Message, state: FSMContext):
     await state.update_data(description=message.text.strip())
     await state.set_state(AddProduct.price)
     await message.answer("💰 Вкажи ціну:")
 
-# ===== PRICE =====
 @dp.message(AddProduct.price, F.text)
 async def price_step(message: types.Message, state: FSMContext):
     await state.update_data(price=message.text.strip())
     await state.set_state(AddProduct.link)
     await message.answer("🔗 Встав посилання:")
 
-# ===== LINK =====
 @dp.message(AddProduct.link, F.text)
 async def link_step(message: types.Message, state: FSMContext):
     await state.update_data(link=message.text.strip())
     await state.set_state(AddProduct.photos)
     await message.answer("📸 Надішли фото. Коли все — натисни ✅ Готово.")
 
-# ===== PHOTOS =====
 @dp.message(AddProduct.photos, F.photo)
 async def photos_step(message: types.Message, state: FSMContext):
     data = await state.get_data()
@@ -107,13 +94,13 @@ async def photos_step(message: types.Message, state: FSMContext):
     photos.append(message.photo[-1].file_id)
     await state.update_data(photo_ids=photos)
     sid = data["session_id"]
-    kb = InlineKeyboardMarkup(inline_keyboard=[[ 
-        InlineKeyboardButton("➕ Ще фото", callback_data=f"more:{sid}"),
-        InlineKeyboardButton("✅ Готово", callback_data=f"done:{sid}")
-    ]])
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton("➕ Ще фото", callback_data=f"more:{sid}"),
+         InlineKeyboardButton("✅ Готово", callback_data=f"done:{sid}")]
+    ])
     await message.answer(f"📸 Додано фото: {len(photos)}", reply_markup=kb)
 
-# ===== PHOTO CALLBACK =====
+# ===== CALLBACKS =====
 @dp.callback_query(F.data.startswith(("more:", "done:")))
 async def photo_callback(query: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -134,24 +121,17 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
         await query.answer("❗ Додай хоча б одне фото", show_alert=True)
         return
     await state.set_state(AddProduct.preview)
-    text = (
-        f"<b>{data['name']}</b>\n\n"
-        f"{data['description']}\n\n"
-        f"💰 {data['price']}\n\n"
-        f"👇 Подивитись та купити"
-    )
-    kb = InlineKeyboardMarkup(inline_keyboard=[[ 
-        InlineKeyboardButton("🛒 Подивитись та купити", url=data['link']),
-        InlineKeyboardButton("✅ Опублікувати", callback_data=f"publish:{sid}"),
-        InlineKeyboardButton("❌ Скасувати", callback_data=f"cancel:{sid}")
-    ]])
-    media = [types.InputMediaPhoto(media=p, caption=text, parse_mode="HTML") if i==0 else types.InputMediaPhoto(media=p)
-             for i, p in enumerate(photos)]
+    text = f"<b>{data['name']}</b>\n\n{data['description']}\n\n💰 {data['price']}\n\n👇 Подивитись та купити"
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton("🛒 Подивитись та купити", url=data['link']),
+         InlineKeyboardButton("✅ Опублікувати", callback_data=f"publish:{sid}"),
+         InlineKeyboardButton("❌ Скасувати", callback_data=f"cancel:{sid}")]
+    ])
+    media = [types.InputMediaPhoto(media=p, caption=text if i==0 else None) for i, p in enumerate(photos)]
     await query.message.answer_media_group(media=media)
     await query.message.answer("Перевір товар 👇", reply_markup=kb)
     await query.answer()
 
-# ===== PREVIEW CALLBACK =====
 @dp.callback_query(F.data.startswith(("publish:", "cancel:")))
 async def preview_callback(query: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -172,15 +152,10 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
     if not photos:
         await query.answer("❗ Немає фото", show_alert=True)
         return
-    text = (
-        f"<b>{data['name']}</b>\n\n"
-        f"{data['description']}\n\n"
-        f"💰 {data['price']}\n\n"
-        f"👇 Подивитись та купити"
-    )
+    text = f"<b>{data['name']}</b>\n\n{data['description']}\n\n💰 {data['price']}\n\n👇 Подивитись та купити"
     await bot.send_media_group(
         CHANNEL_ID,
-        media=[types.InputMediaPhoto(media=p, caption=text if i==0 else None, parse_mode="HTML") for i, p in enumerate(photos)]
+        media=[types.InputMediaPhoto(media=p, caption=text if i==0 else None) for i, p in enumerate(photos)]
     )
     await state.clear()
     await query.message.answer("✅ Товар опубліковано!", reply_markup=main_kb)
@@ -195,7 +170,7 @@ async def fallback(message: types.Message, state: FSMContext):
     else:
         await message.answer("Натисни «➕ Додати товар»", reply_markup=main_kb)
 
-# === WEBHOOK & APP ===
+# ===== WEBHOOK & APP =====
 WEBHOOK_PATH = "/webhook"
 WEBAPP_HOST = "0.0.0.0"
 WEBAPP_PORT = int(os.environ.get("PORT", 8080))
@@ -205,13 +180,13 @@ def create_app():
 
     async def on_startup(app):
         print("=== Стартую бота ===")
-        # Ставим вебхук один раз
+        # Удаляем старый вебхук и ставим новый
+        await bot.delete_webhook(drop_pending_updates=True)
         await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
         print("Webhook встановлено ✅")
 
     async def on_cleanup(app):
         print("=== Завершаю бота ===")
-        # Не удаляем webhook, просто закрываем сессию
         await bot.session.close()
         print("Сессия бота закрыта ✅")
 
@@ -225,16 +200,12 @@ def create_app():
             traceback.print_exc()
         return web.Response(text="ok")
 
-    # Роутинг и хуки
     app.router.add_post(WEBHOOK_PATH, handle_webhook)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
-
     return app
 
-# --- Запуск ---
 if __name__ == "__main__":
     app = create_app()
     print(f"=== Запускаю сервер на {WEBAPP_HOST}:{WEBAPP_PORT} ===")
-    # Гарантированно слушаем порт Fly
     web.run_app(app, host=WEBAPP_HOST, port=WEBAPP_PORT)
