@@ -46,18 +46,15 @@ async def start(message: types.Message, state: FSMContext):
 async def start_btn(message: types.Message):
     await message.answer("Готово. Додавай товар 👇", reply_markup=main_kb)
 
-# ===== SAFE ADD PRODUCT =====
+# ===== ADD PRODUCT =====
 @dp.message(F.text == "➕ Додати товар")
 async def add_product(message: types.Message, state: FSMContext):
-    # ❗ НЕ даём сбросить процесс, если он уже идёт
-    if await state.get_state():
-        await message.answer("⚠️ Ти вже додаєш товар. Заверши або дочекайся кінця.")
-        return
+    await state.clear()
 
-    session_id = str(uuid.uuid4())
+    sid = str(uuid.uuid4())
 
     await state.update_data(
-        session_id=session_id,
+        session_id=sid,
         photo_ids=[]
     )
 
@@ -96,6 +93,7 @@ async def link_step(message: types.Message, state: FSMContext):
 @dp.message(AddProduct.photos, F.photo)
 async def photos_step(message: types.Message, state: FSMContext):
     data = await state.get_data()
+
     photos = data.get("photo_ids", [])
     photos.append(message.photo[-1].file_id)
 
@@ -104,13 +102,13 @@ async def photos_step(message: types.Message, state: FSMContext):
     sid = data["session_id"]
 
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[[ 
+        inline_keyboard=[[
             InlineKeyboardButton(text="➕ Ще фото", callback_data=f"more:{sid}"),
             InlineKeyboardButton(text="✅ Готово", callback_data=f"done:{sid}")
         ]]
     )
 
-    await message.answer(f"📸 Фото додано: {len(photos)}", reply_markup=kb)
+    await message.answer(f"📸 Додано фото: {len(photos)}", reply_markup=kb)
 
 # ===== PHOTO CALLBACK =====
 @dp.callback_query(F.data.startswith(("more:", "done:")))
@@ -129,7 +127,7 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
         return
 
     if await state.get_state() != AddProduct.photos.state:
-        await query.answer("⚠️ Етап фото завершено", show_alert=True)
+        await query.answer("⚠️ Етап завершено", show_alert=True)
         return
 
     if action == "more":
@@ -161,6 +159,7 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
     )
 
     media = [InputMediaPhoto(media=p) for p in photos]
+
     await query.message.answer_media_group(media=media)
     await query.message.answer(text, reply_markup=kb, parse_mode="HTML")
     await query.answer()
@@ -199,6 +198,7 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
     )
 
     media = [InputMediaPhoto(media=p) for p in photos]
+
     kb = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="🛒 Купити", url=data['link'])]]
     )
@@ -210,13 +210,13 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
     await query.message.answer("✅ Товар опубліковано!", reply_markup=main_kb)
     await query.answer()
 
-# ===== FALLBACK SAFE =====
+# ===== FALLBACK =====
 @dp.message()
 async def fallback(message: types.Message, state: FSMContext):
     current = await state.get_state()
 
     if current:
-        await message.answer("⚠️ Ти вже додаєш товар. Відповідай по кроку.")
+        await message.answer("⚠️ Йди по кроках. Заверши товар.")
     else:
         await message.answer("Натисни «➕ Додати товар»", reply_markup=main_kb)
 
