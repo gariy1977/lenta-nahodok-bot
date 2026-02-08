@@ -1,22 +1,25 @@
 import os
+import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils import executor
-from aiogram.contrib.fsm_storage.redis import RedisStorage2
+from aiogram.fsm.storage.redis import RedisStorage
 
-# --- Загружаем переменные из окружения ---
+# --- Загружаем переменные окружения ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 REDIS_URL = os.getenv("REDIS_URL")
 
-# --- Настройка бота и хранилища FSM ---
-storage = RedisStorage2.from_url(REDIS_URL) if REDIS_URL else None
+# --- Настройка FSM через Redis (если нужно) ---
+storage = RedisStorage.from_url(REDIS_URL) if REDIS_URL else None
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot, storage=storage)
+dp = Dispatcher(storage=storage)
 
 # --- Обработчик фото с подписью (в одной подписи: название, описание, ссылка) ---
-@dp.message_handler(content_types=types.ContentType.PHOTO)
+@dp.message()
 async def handle_product_photo(message: types.Message):
+    if not message.photo:
+        return  # Игнорируем не-фото сообщения
+
     if not message.caption:
         await message.reply("Братанчик, подпись к фото нужна: Название, Описание, Ссылка!")
         return
@@ -30,8 +33,9 @@ async def handle_product_photo(message: types.Message):
     description = lines[1].replace("Описание: ", "").strip()
     ref_link = lines[2].replace("Ссылка: ", "").strip()
 
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton(text="Подивитись та купити", url=ref_link))
+    keyboard = InlineKeyboardMarkup().add(
+        InlineKeyboardButton(text="Подивитись та купити", url=ref_link)
+    )
 
     photo = message.photo[-1].file_id  # берём самое большое фото
 
@@ -44,7 +48,10 @@ async def handle_product_photo(message: types.Message):
 
     await message.reply("✅ Товар отправлен в канал!")
 
-# --- Запуск бота через polling ---
-if __name__ == "__main__":
+# --- Запуск бота через asyncio.run ---
+async def main():
     print("Братанчик, бот запускается...")
-    executor.start_polling(dp, skip_updates=True)
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
