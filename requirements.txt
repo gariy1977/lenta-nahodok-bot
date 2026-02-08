@@ -1,1 +1,4 @@
 aiogram==3.4.1
+aiogram>=3.0.0
+redis>=5.0.0
+aioredis>=2.0.0
