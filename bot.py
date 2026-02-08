@@ -36,12 +36,14 @@ dp = Dispatcher(storage=storage)
 # ===== KEYBOARDS =====
 start_kb = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="▶️ Старт")]],
-    resize_keyboard=True
+    resize_keyboard=True,
+    one_time_keyboard=True  # опционально, чтобы скрывалась после нажатия
 )
 
 main_kb = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="➕ Додати товар")]],
-    resize_keyboard=True
+    resize_keyboard=True,
+    one_time_keyboard=False
 )
 
 # ===== FSM =====
