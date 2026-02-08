@@ -37,7 +37,7 @@ dp = Dispatcher(storage=storage)
 start_kb = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="▶️ Старт")]],
     resize_keyboard=True,
-    one_time_keyboard=True  # опционально, чтобы скрывалась после нажатия
+    one_time_keyboard=True
 )
 
 main_kb = ReplyKeyboardMarkup(
@@ -115,7 +115,7 @@ async def photos_step(message: types.Message, state: FSMContext):
     sid = data["session_id"]
 
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[[
+        inline_keyboard=[[ 
             InlineKeyboardButton(text="➕ Ще фото", callback_data=f"more:{sid}"),
             InlineKeyboardButton(text="✅ Готово", callback_data=f"done:{sid}")
         ]]
@@ -152,7 +152,7 @@ async def photo_callback(query: types.CallbackQuery, state: FSMContext):
         f"👇 Подивитись та купити"
     )
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[[
+        inline_keyboard=[[ 
             InlineKeyboardButton(text="🛒 Подивитись та купити", url=data['link']),
             InlineKeyboardButton(text="✅ Опублікувати", callback_data=f"publish:{sid}"),
             InlineKeyboardButton(text="❌ Скасувати", callback_data=f"cancel:{sid}")
@@ -212,17 +212,15 @@ async def fallback(message: types.Message, state: FSMContext):
     else:
         await message.answer("Натисни «➕ Додати товар»", reply_markup=main_kb)
 
-# === WEBHOOK & APP ===
+# ===== WEBHOOK & APP =====
 WEBHOOK_PATH = "/webhook"
 WEBAPP_HOST = "0.0.0.0"
 WEBAPP_PORT = int(os.environ.get("PORT", 8080))
 
 async def on_startup(app: web.Application):
     info = await bot.get_webhook_info()
-    current_url = info.url
     target_url = WEBHOOK_URL + WEBHOOK_PATH
-
-    if current_url != target_url:
+    if info.url != target_url:
         try:
             await bot.set_webhook(target_url)
             print("Webhook встановлено ✅")
@@ -251,7 +249,6 @@ def create_app():
     app.on_cleanup.append(on_cleanup)
     return app
 
-# --- Запуск ---
 if __name__ == "__main__":
     app = create_app()
     print(f"=== Запускаю сервер на {WEBAPP_HOST}:{WEBAPP_PORT} ===")
