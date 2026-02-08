@@ -217,41 +217,38 @@ WEBHOOK_PATH = "/webhook"
 WEBAPP_HOST = "0.0.0.0"
 WEBAPP_PORT = int(os.environ.get("PORT", 8080))
 
+async def on_startup(app: web.Application):
+    info = await bot.get_webhook_info()
+    current_url = info.url
+    target_url = WEBHOOK_URL + WEBHOOK_PATH
+
+    if current_url != target_url:
+        try:
+            await bot.set_webhook(target_url)
+            print("Webhook встановлено ✅")
+        except Exception as e:
+            print(f"Помилка вебхуку: {e}")
+
+async def on_cleanup(app: web.Application):
+    print("=== Завершаю бота ===")
+    await bot.session.close()
+    print("Сессия бота закрыта ✅")
+
+async def handle_webhook(request: web.Request):
+    try:
+        data = await request.json()
+        update = Update(**data)
+        await dp.feed_update(update)
+    except Exception as e:
+        print("Webhook error:", e)
+        traceback.print_exc()
+    return web.Response(text="ok")
+
 def create_app():
     app = web.Application()
-
-    async def on_startup(app: web.Application):
-        info = await bot.get_webhook_info()
-        current_url = info.url
-        target_url = WEBHOOK_URL + WEBHOOK_PATH
-
-        if current_url != target_url:
-            try:
-                await bot.set_webhook(target_url)
-                print("Webhook встановлено ✅")
-            except Exception as e:
-                print(f"Помилка вебхуку: {e}")
-
-    def create_app():
-        app = web.Application()
-        app.on_startup.append(on_startup)
-        # остальные маршруты и cleanup
-        return app
-
-    async def handle_webhook(request: web.Request):
-        try:
-            data = await request.json()
-            update = Update(**data)
-            await dp.feed_update(update)
-        except Exception as e:
-            print("Webhook error:", e)
-            traceback.print_exc()
-        return web.Response(text="ok")
-
     app.router.add_post(WEBHOOK_PATH, handle_webhook)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
-
     return app
 
 # --- Запуск ---
