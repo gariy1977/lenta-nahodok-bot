@@ -177,10 +177,10 @@ async def preview_callback(query: types.CallbackQuery, state: FSMContext):
         f"💰 {data['price']}\n\n"
         f"👇 Подивитись та купити"
     )
-    kb = InlineKeyboardMarkup(inline_keyboard=[[ 
-        InlineKeyboardButton("🛒 Подивитись та купити", url=data['link'])
-    ]])
-    await bot.send_media_group(CHANNEL_ID, media=[types.InputMediaPhoto(media=p, caption=text if i==0 else None, parse_mode="HTML") for i, p in enumerate(photos)])
+    await bot.send_media_group(
+        CHANNEL_ID,
+        media=[types.InputMediaPhoto(media=p, caption=text if i==0 else None, parse_mode="HTML") for i, p in enumerate(photos)]
+    )
     await state.clear()
     await query.message.answer("✅ Товар опубліковано!", reply_markup=main_kb)
     await query.answer()
@@ -199,17 +199,18 @@ WEBHOOK_PATH = "/webhook"
 WEBAPP_HOST = "0.0.0.0"
 WEBAPP_PORT = int(os.environ.get("PORT", 8080))
 
-# Создаём приложение **до** запуска
 app = web.Application()
 
 async def on_startup(app):
+    print("=== Стартую бота ===")
     await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
     print("Webhook встановлено ✅")
 
-async def on_shutdown(app):
+async def on_cleanup(app):
+    print("=== Завершаю бота ===")
     await bot.delete_webhook()
     await bot.session.close()
-    print("Webhook видалено, з’єднання закрито ✅")
+    print("Webhook видалено ✅")
 
 async def handle_webhook(request: web.Request):
     try:
@@ -220,11 +221,12 @@ async def handle_webhook(request: web.Request):
         print("Webhook error:", e)
     return web.Response(text="ok")
 
-# Привязываем роут и хуки
+# --- Роутинг и хуки ---
 app.router.add_post(WEBHOOK_PATH, handle_webhook)
 app.on_startup.append(on_startup)
-app.on_cleanup.append(on_shutdown)
+app.on_cleanup.append(on_cleanup)
 
-# Запускаем
+# --- Запуск ---
 if __name__ == "__main__":
+    print(f"=== Запускаю сервер на {WEBAPP_HOST}:{WEBAPP_PORT} ===")
     web.run_app(app, host=WEBAPP_HOST, port=WEBAPP_PORT)
