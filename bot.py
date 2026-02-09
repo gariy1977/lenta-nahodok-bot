@@ -1,197 +1,140 @@
 import os
 import asyncio
-import json
 import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
-from aiogram.types import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    KeyboardButton,
-    ReplyKeyboardMarkup
-)
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 
-DATA_FILE = "pending_products.json"
-
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ==========================
-# ЗАГРУЗКА / СОХРАНЕНИЕ
-# ==========================
-def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-pending_products = load_data()
-
-# ==========================
-# КЛАВИАТУРА
-# ==========================
+# ======================
+# КНОПКИ
+# ======================
 main_keyboard = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="➕ Добавить товар")]],
     resize_keyboard=True
 )
 
-def buy_keyboard(url):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🛒 Подивитись та купити", url=url)]
-        ]
-    )
+def publish_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📢 Опубликовать", callback_data="publish")]
+    ])
 
-# ==========================
+def buy_keyboard(url):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🛒 Купить", url=url)]
+    ])
+
+# ======================
+# ПАМЯТЬ
+# ======================
+user_data = {}
+
+# ======================
 # СТАРТ
-# ==========================
+# ======================
 @dp.message(CommandStart())
 async def start(message: types.Message):
     await message.answer(
-        "Привіт! Натисни ➕ Додати товар для публікації.",
+        "Привет! Нажми ➕ Добавить товар",
         reply_markup=main_keyboard
     )
 
-# ==========================
+# ======================
 # ДОБАВИТЬ ТОВАР
-# ==========================
+# ======================
 @dp.message(F.text == "➕ Добавить товар")
 async def add_product(message: types.Message):
-    pending_products[str(message.from_user.id)] = {
+    user_data[message.from_user.id] = {
         "photos": [],
-        "text": "",
-        "editing": False
+        "text": ""
     }
-    save_data(pending_products)
 
     await message.answer(
-        "📦 Надішли фото товару (можна кілька).\n"
-        "Потім надішли текст у форматі:\n\n"
-        "Назва\nОпис\nЦіна\nДоставка\nПосилання"
+        "📸 Отправь фото товара.\n"
+        "✍️ Потом отправь текст:\n\n"
+        "Название\nОписание\nЦена\nДоставка\nСсылка"
     )
 
-# ==========================
-# ОБРАБОТКА
-# ==========================
+# ======================
+# ПОЛУЧЕНИЕ ФОТО И ТЕКСТА
+# ======================
 @dp.message()
-async def handle_product(message: types.Message):
-    user_id = str(message.from_user.id)
-    data = pending_products.get(user_id)
+async def handle(message: types.Message):
+    uid = message.from_user.id
+    data = user_data.get(uid)
 
     if not data:
         return
 
-    # ✏️ РЕДАКТИРОВАНИЕ
-    if data["editing"] and message.text:
-        data["text"] = message.text
-        data["editing"] = False
-        save_data(pending_products)
-        await send_preview(message, user_id)
-        return
-
-    # 🖼 ФОТО
+    # ФОТО
     if message.photo:
         data["photos"].append(message.photo[-1].file_id)
-        save_data(pending_products)
-        await send_preview(message, user_id)
+        await message.answer("Фото принято 👍")
         return
 
-    # 📝 ТЕКСТ
+    # ТЕКСТ
     if message.text:
         lines = [l.strip() for l in message.text.split("\n") if l.strip()]
 
         if len(lines) < 5:
-            await message.answer(
-                "❌ Формат неправильний.\n\n"
-                "Потрібно:\nНазва\nОпис\nЦіна\nДоставка\nПосилання"
-            )
+            await message.answer("❌ Нужно 5 строк:\nНазвание\nОписание\nЦена\nДоставка\nСсылка")
             return
 
         data["text"] = message.text
-        save_data(pending_products)
-        await send_preview(message, user_id)
 
-# ==========================
-# ПРЕДПРОСМОТР
-# ==========================
-async def send_preview(message, user_id):
-    data = pending_products[user_id]
+        await message.answer(
+            "✅ Товар готов! Нажми кнопку для публикации",
+            reply_markup=publish_keyboard()
+        )
 
-    if not data["photos"] or not data["text"]:
+# ======================
+# CALLBACK — ПУБЛИКАЦИЯ
+# ======================
+@dp.callback_query(F.data == "publish")
+async def publish(callback: types.CallbackQuery):
+    uid = callback.from_user.id
+    data = user_data.get(uid)
+
+    if not data or not data["photos"] or not data["text"]:
+        await callback.answer("❌ Нет данных", show_alert=True)
         return
 
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✏️ Редагувати текст", callback_data="edit_text")],
-        [InlineKeyboardButton(text="📢 Опублікувати", callback_data="publish")]
-    ])
+    lines = [l.strip() for l in data["text"].split("\n") if l.strip()]
+    url = lines[-1]
 
-    await message.answer("✅ Товар готовий до публікації.", reply_markup=keyboard)
-
-# ==========================
-# CALLBACK
-# ==========================
-@dp.callback_query()
-async def handle_callback(callback: types.CallbackQuery):
-    user_id = str(callback.from_user.id)
-    data = pending_products.get(user_id)
-
-    if not data:
-        await callback.answer("❌ Товар не знайдено", show_alert=True)
+    if not re.match(r"^https?://", url):
+        await callback.answer("❌ Последняя строка — ссылка", show_alert=True)
         return
 
-    # ✏️ РЕДАКТИРОВАТЬ
-    if callback.data == "edit_text":
-        data["editing"] = True
-        save_data(pending_products)
-        await callback.message.answer("✏️ Надішли новий текст:")
-        await callback.answer()
-        return
+    caption = "\n".join(lines[:-1])[:1024]
 
-    # 📢 ПУБЛИКАЦИЯ
-    if callback.data == "publish":
-        if not data["photos"] or not data["text"]:
-            await callback.answer("❌ Товар не готовий", show_alert=True)
-            return
+    media = []
+    for i, photo in enumerate(data["photos"]):
+        if i == 0:
+            media.append(types.InputMediaPhoto(media=photo, caption=caption))
+        else:
+            media.append(types.InputMediaPhoto(media=photo))
 
-        lines = [l.strip() for l in data["text"].split("\n") if l.strip()]
-        url = lines[-1]
+    try:
+        await bot.send_media_group(CHANNEL_ID, media)
+        await bot.send_message(CHANNEL_ID, "🛒 Купить", reply_markup=buy_keyboard(url))
 
-        if not re.match(r"^https?://", url):
-            await callback.answer("❌ Останній рядок має бути URL", show_alert=True)
-            return
+        await callback.message.answer("✅ Опубликовано!", reply_markup=main_keyboard)
+        user_data.pop(uid, None)
 
-        caption = "\n".join(lines[:-1])[:1024]
+    except Exception as e:
+        await callback.message.answer(f"❌ Ошибка:\n{e}")
 
-        media = []
-        for i, p in enumerate(data["photos"]):
-            if i == 0:
-                media.append(types.InputMediaPhoto(media=p, caption=caption))
-            else:
-                media.append(types.InputMediaPhoto(media=p))
+    await callback.answer()
 
-        try:
-            await bot.send_media_group(CHANNEL_ID, media)
-            await bot.send_message(CHANNEL_ID, "🛒 Купити", reply_markup=buy_keyboard(url))
-
-            await callback.message.answer("✅ Опубліковано!", reply_markup=main_keyboard)
-            pending_products.pop(user_id, None)
-            save_data(pending_products)
-
-        except Exception as e:
-            await callback.message.answer(f"❌ Помилка публікації:\n{e}")
-
-        await callback.answer()
-
-# ==========================
+# ======================
 # ЗАПУСК
-# ==========================
+# ======================
 async def main():
     await dp.start_polling(bot)
 
