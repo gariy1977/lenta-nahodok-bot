@@ -34,7 +34,7 @@ async def add_product_instruction(message: types.Message):
         "📦 Надішли фото товару з підписом у форматі:\n\n"
         "Назва\nЦіна\nКоротко\nОпис\nПосилання\n\n"
         "📌 Приклад:\n"
-        "Назва товару\n1284 грн\nНабір\nОпис товару\nhttps://link.com"
+        "Назва товару\n1284 грн\nНабір\nОпис товару\nhttps://....."
     )
 
 async def send_product(photo_file, caption: str, url: str):
