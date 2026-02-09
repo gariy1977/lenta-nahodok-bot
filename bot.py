@@ -25,6 +25,9 @@ def buy_keyboard(url: str):
 # Хранилище временных данных {user_id: {"photos": [...], "text": str}}
 pending_products = {}
 
+# Состояния для редактирования
+editing_users = set()
+
 # Старт
 @dp.message(CommandStart())
 async def start(message: types.Message):
@@ -36,6 +39,8 @@ async def start(message: types.Message):
 # Инструкция
 @dp.message(F.text == "➕ Добавить товар")
 async def add_product_instruction(message: types.Message):
+    user_id = message.from_user.id
+    pending_products.pop(user_id, None)
     await message.answer(
         "📦 Надішли фото товару (можна кілька) та текст у підписі у форматі:\n\n"
         "Назва\nОпис\nЦіна\nДоставка\nПосилання\n\n"
@@ -47,6 +52,24 @@ async def add_product_instruction(message: types.Message):
 async def handle_product(message: types.Message):
     user_id = message.from_user.id
 
+    # Если пользователь редактирует текст, пропускаем фото
+    if user_id in editing_users:
+        pending_products[user_id]["text"] = message.text
+        editing_users.remove(user_id)
+        await message.answer(
+            "Текст збережено. Тепер можеш опублікувати товар.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Редагувати текст", callback_data="edit_text")],
+                [InlineKeyboardButton(text="Опублікувати", callback_data="publish")]
+            ])
+        )
+        return
+
+    # Проверка фото
+    if not (message.photo or (message.document and message.document.mime_type.startswith("image/"))):
+        await message.answer("❌ Надішли фото товару.", reply_markup=main_keyboard)
+        return
+
     if user_id not in pending_products:
         pending_products[user_id] = {"photos": [], "text": ""}
 
@@ -56,7 +79,7 @@ async def handle_product(message: types.Message):
     elif message.document and message.document.mime_type.startswith("image/"):
         pending_products[user_id]["photos"].append(message.document.file_id)
 
-    # Если есть текст, сохраняем и показываем кнопки
+    # Если есть подпись, сохраняем текст
     if message.caption:
         lines = [line.strip() for line in message.caption.split("\n") if line.strip()]
         if len(lines) < 5:
@@ -67,12 +90,18 @@ async def handle_product(message: types.Message):
             return
         pending_products[user_id]["text"] = message.caption
 
+        # Предпросмотр и кнопки
         await message.answer(
             "✅ Товар готовий до публікації. Можеш відредагувати текст або опублікувати.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Редагувати текст", callback_data="edit_text")],
                 [InlineKeyboardButton(text="Опублікувати", callback_data="publish")]
             ])
+        )
+    else:
+        await message.answer(
+            "✅ Фото додано. Надішли текст опису після всіх фото у форматі:\n"
+            "Назва\nОпис\nЦіна\nДоставка\nПосилання"
         )
 
 # Кнопки редактирования/публикации
@@ -86,6 +115,7 @@ async def handle_buttons(callback: types.CallbackQuery):
         return
 
     if callback.data == "edit_text":
+        editing_users.add(user_id)
         await callback.message.answer(
             "✏️ Відредагуй текст нижче і надішли його назад:",
             reply_markup=None
@@ -117,19 +147,6 @@ async def handle_buttons(callback: types.CallbackQuery):
             pending_products.pop(user_id, None)
         except Exception as e:
             await callback.message.answer(f"❌ Помилка публікації:\n{e}")
-
-# Прием отредактированного текста
-@dp.message()
-async def receive_edited_text(message: types.Message):
-    user_id = message.from_user.id
-    if user_id in pending_products and pending_products[user_id].get("photos"):
-        pending_products[user_id]["text"] = message.text
-        await message.answer(
-            "Текст збережено. Тепер можеш опублікувати товар.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Опублікувати", callback_data="publish")]
-            ])
-        )
 
 # Запуск
 async def main():
