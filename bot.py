@@ -1,5 +1,6 @@
 import os
 import asyncio
+import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.filters import CommandStart
@@ -65,7 +66,7 @@ async def handle_product(message: types.Message):
         lines = [line.strip() for line in message.caption.split("\n") if line.strip()]
         if len(lines) < 5:
             await message.answer(
-                "❌ Формат тексту невірний.\n\nПотрібно 5 рядків:\nНазва\nОпис\nЦіна\nДоставка\nПосилання",
+                "❌ Формат тексту невірний.\n\nПотрібно мінімум 5 рядків:\nНазва\nОпис\nЦіна\nДоставка\nПосилання",
                 reply_markup=main_keyboard
             )
             return
@@ -104,8 +105,17 @@ async def handle_buttons(callback: types.CallbackQuery):
 
     elif callback.data == "publish":
         lines = [line.strip() for line in data["text"].split("\n") if line.strip()]
-        title, description, price, delivery, url = lines[:5]
-        caption = f"{title}\n\n{description}\n\n{price}\n{delivery}"
+        if len(lines) < 5:
+            await callback.message.answer("❌ Текст має містити мінімум 5 рядків, останній рядок - URL.")
+            return
+
+        url_candidate = lines[-1]
+        if not re.match(r'^https?://', url_candidate):
+            await callback.message.answer("❌ Останній рядок повинен бути валідним URL (починається з http:// або https://).")
+            return
+        url = url_candidate
+
+        caption = "\n".join(lines[:-1])  # Все кроме последней строки (URL)
 
         # Создаем галерею фото
         media = [types.InputMediaPhoto(media=photo_id) for photo_id in data["photos"]]
