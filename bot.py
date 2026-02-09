@@ -3,7 +3,7 @@ import asyncio
 import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Text
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
@@ -22,10 +22,9 @@ def buy_keyboard(url: str):
         [InlineKeyboardButton(text="Подивитись та купити", url=url)]
     ])
 
-# Хранилище временных данных {user_id: {"photos": [...], "text": str}}
+# Временное хранилище товаров {user_id: {"photos": [...], "text": str}}
 pending_products = {}
-
-# Состояния для редактирования
+# Пользователи, которые редактируют текст
 editing_users = set()
 
 # Старт
@@ -37,10 +36,11 @@ async def start(message: types.Message):
     )
 
 # Инструкция
-@dp.message(F.text == "➕ Добавить товар")
+@dp.message(Text("➕ Добавить товар"))
 async def add_product_instruction(message: types.Message):
     user_id = message.from_user.id
     pending_products.pop(user_id, None)
+    editing_users.discard(user_id)
     await message.answer(
         "📦 Надішли фото товару (можна кілька) та текст у підписі у форматі:\n\n"
         "Назва\nОпис\nЦіна\nДоставка\nПосилання\n\n"
@@ -52,7 +52,7 @@ async def add_product_instruction(message: types.Message):
 async def handle_product(message: types.Message):
     user_id = message.from_user.id
 
-    # Если пользователь редактирует текст, пропускаем фото
+    # Если пользователь редактирует текст
     if user_id in editing_users:
         pending_products[user_id]["text"] = message.text
         editing_users.remove(user_id)
@@ -91,62 +91,65 @@ async def handle_product(message: types.Message):
         pending_products[user_id]["text"] = message.caption
 
         # Предпросмотр и кнопки
-        await message.answer(
-            "✅ Товар готовий до публікації. Можеш відредагувати текст або опублікувати.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Редагувати текст", callback_data="edit_text")],
-                [InlineKeyboardButton(text="Опублікувати", callback_data="publish")]
-            ])
-        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Редагувати текст", callback_data="edit_text")],
+            [InlineKeyboardButton(text="Опублікувати", callback_data="publish")]
+        ])
+        await message.answer("✅ Товар готовий до публікації.", reply_markup=keyboard)
     else:
         await message.answer(
             "✅ Фото додано. Надішли текст опису після всіх фото у форматі:\n"
             "Назва\nОпис\nЦіна\nДоставка\nПосилання"
         )
 
-# Кнопки редактирования/публикации
-@dp.callback_query()
-async def handle_buttons(callback: types.CallbackQuery):
+# Кнопка редактирования текста
+@dp.callback_query(Text("edit_text"))
+async def edit_text(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     data = pending_products.get(user_id)
-
     if not data or not data.get("photos") or not data.get("text"):
-        await callback.message.answer("❌ Немає повного товару для редагування або публікації.")
+        await callback.answer("❌ Немає товару для редагування.", show_alert=True)
+        return
+    editing_users.add(user_id)
+    await callback.message.answer("✏️ Відредагуй текст нижче і надішли його назад:", reply_markup=None)
+    await callback.message.answer(data["text"])
+    await callback.answer()
+
+# Кнопка публикации
+@dp.callback_query(Text("publish"))
+async def publish_product(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    data = pending_products.get(user_id)
+    if not data or not data.get("photos") or not data.get("text"):
+        await callback.answer("❌ Немає повного товару для публікації.", show_alert=True)
         return
 
-    if callback.data == "edit_text":
-        editing_users.add(user_id)
-        await callback.message.answer(
-            "✏️ Відредагуй текст нижче і надішли його назад:",
-            reply_markup=None
-        )
-        await callback.message.answer(data["text"])
+    lines = [line.strip() for line in data["text"].split("\n") if line.strip()]
+    if len(lines) < 5:
+        await callback.answer("❌ Текст має містити мінімум 5 рядків, останній рядок - URL.", show_alert=True)
+        return
 
-    elif callback.data == "publish":
-        lines = [line.strip() for line in data["text"].split("\n") if line.strip()]
-        if len(lines) < 5:
-            await callback.message.answer("❌ Текст має містити мінімум 5 рядків, останній рядок - URL.")
-            return
+    url_candidate = lines[-1]
+    if not re.match(r'^https?://', url_candidate):
+        await callback.answer("❌ Останній рядок повинен бути валідним URL.", show_alert=True)
+        return
+    url = url_candidate
 
-        url_candidate = lines[-1]
-        if not re.match(r'^https?://', url_candidate):
-            await callback.message.answer("❌ Останній рядок повинен бути валідним URL (починається з http:// або https://).")
-            return
-        url = url_candidate
+    caption = "\n".join(lines[:-1])  # Все кроме последнего ряда
 
-        caption = "\n".join(lines[:-1])  # Все кроме последней строки (URL)
+    # Создаем галерею фото
+    media = [types.InputMediaPhoto(media=photo_id) for photo_id in data["photos"]]
+    media[0].caption = caption  # caption только к первому фото
 
-        # Создаем галерею фото
-        media = [types.InputMediaPhoto(media=photo_id) for photo_id in data["photos"]]
-        media[0].caption = caption  # caption только к первому фото
+    try:
+        await bot.send_media_group(chat_id=CHANNEL_ID, media=media)
+        await bot.send_message(chat_id=CHANNEL_ID, text="Подивитись та купити", reply_markup=buy_keyboard(url))
+        await callback.message.answer("✅ Товар опубліковано!", reply_markup=main_keyboard)
+        pending_products.pop(user_id, None)
+    except Exception as e:
+        await callback.message.answer(f"❌ Помилка публікації:\n{e}")
 
-        try:
-            await bot.send_media_group(chat_id=CHANNEL_ID, media=media)
-            await bot.send_message(chat_id=CHANNEL_ID, text="Подивитись та купити", reply_markup=buy_keyboard(url))
-            await callback.message.answer("✅ Товар опубліковано!", reply_markup=main_keyboard)
-            pending_products.pop(user_id, None)
-        except Exception as e:
-            await callback.message.answer(f"❌ Помилка публікації:\n{e}")
+    await callback.answer()  # Подтверждаем callback_query
 
 # Запуск
 async def main():
