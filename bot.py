@@ -22,7 +22,7 @@ def buy_keyboard(url: str):
         [InlineKeyboardButton(text="Подивитись та купити", url=url)]
     ])
 
-# Хранилище товаров {user_id: {"photos": [], "text": str, "ready": bool}}
+# Хранилище товаров {user_id: {"photos": [], "text": str, "ready": bool, "notified_photo": bool}}
 pending_products = {}
 # Пользователи, редактирующие текст
 editing_users = set()
@@ -45,6 +45,7 @@ async def add_product_instruction(message: types.Message):
     user_id = message.from_user.id
     pending_products.pop(user_id, None)
     editing_users.discard(user_id)
+    pending_products[user_id] = {"photos": [], "text": "", "ready": False, "notified_photo": False}
     await message.answer(
         "📦 Надішли фото товару (можна кілька) та текст у підписі у форматі:\n\n"
         "Назва\nОпис\nЦіна\nДоставка\nПосилання\n\n"
@@ -57,12 +58,18 @@ async def add_product_instruction(message: types.Message):
 @dp.message()
 async def handle_product(message: types.Message):
     user_id = message.from_user.id
+    data = pending_products.get(user_id)
+
+    if not data:
+        # На случай, если пользователь прислал фото без команды "Добавить товар"
+        await message.answer("Спочатку натисни ➕ Додати товар.", reply_markup=main_keyboard)
+        return
 
     # Пользователь редактирует текст
     if user_id in editing_users:
-        pending_products[user_id]["text"] = message.text
+        data["text"] = message.text
+        data["ready"] = True
         editing_users.remove(user_id)
-        pending_products[user_id]["ready"] = True
         await message.answer(
             "Текст збережено. Тепер можеш опублікувати товар.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -73,41 +80,41 @@ async def handle_product(message: types.Message):
         return
 
     # Проверка фото
-    if not (message.photo or (message.document and message.document.mime_type.startswith("image/"))):
-        await message.answer("❌ Надішли фото товару.", reply_markup=main_keyboard)
+    is_photo = message.photo or (message.document and message.document.mime_type.startswith("image/"))
+    if is_photo:
+        if message.photo:
+            data["photos"].append(message.photo[-1].file_id)
+        else:
+            data["photos"].append(message.document.file_id)
+
+    # Если фото без текста, уведомление один раз
+    if is_photo and not message.caption and not data["notified_photo"]:
+        data["notified_photo"] = True
+        await message.answer(
+            "✅ Фото додано. Надішли текст опису після всіх фото у форматі:\n"
+            "Назва\nОпис\nЦіна\nДоставка\nПосилання"
+        )
         return
 
-    if user_id not in pending_products:
-        pending_products[user_id] = {"photos": [], "text": "", "ready": False}
-
-    # Сохраняем фото
-    if message.photo:
-        pending_products[user_id]["photos"].append(message.photo[-1].file_id)
-    elif message.document and message.document.mime_type.startswith("image/"):
-        pending_products[user_id]["photos"].append(message.document.file_id)
-
-    # Если пришёл текст в caption, сохраняем и делаем товар готовым
-    if message.caption:
-        lines = [line.strip() for line in message.caption.split("\n") if line.strip()]
+    # Если есть текст (caption или просто сообщение)
+    text = message.caption if message.caption else message.text
+    if text:
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
         if len(lines) < 5:
             await message.answer(
                 "❌ Формат тексту невірний.\n\nПотрібно мінімум 5 рядків:\nНазва\nОпис\nЦіна\nДоставка\nПосилання",
                 reply_markup=main_keyboard
             )
             return
-        pending_products[user_id]["text"] = message.caption
-        pending_products[user_id]["ready"] = True
+        data["text"] = text
+        data["ready"] = True
 
+        # Предпросмотр и кнопки
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Редагувати текст", callback_data="edit_text")],
             [InlineKeyboardButton(text="Опублікувати", callback_data="publish")]
         ])
         await message.answer("✅ Товар готовий до публікації.", reply_markup=keyboard)
-    else:
-        await message.answer(
-            "✅ Фото додано. Надішли текст опису після всіх фото у форматі:\n"
-            "Назва\nОпис\nЦіна\nДоставка\nПосилання"
-        )
 
 # ==========================
 # Редактирование и публикация
