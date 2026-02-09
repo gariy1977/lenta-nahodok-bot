@@ -22,9 +22,9 @@ def buy_keyboard(url: str):
         [InlineKeyboardButton(text="Подивитись та купити", url=url)]
     ])
 
-# Временное хранение товаров в памяти {user_id: {"photos": [], "text": str}}
+# Хранилище товаров {user_id: {"photos": [], "text": str, "ready": bool}}
 pending_products = {}
-# Пользователи, которые редактируют текст
+# Пользователи, редактирующие текст
 editing_users = set()
 
 # ==========================
@@ -38,7 +38,7 @@ async def start(message: types.Message):
     )
 
 # ==========================
-# Инструкция
+# Инструкция добавления
 # ==========================
 @dp.message(F.text == "➕ Добавить товар")
 async def add_product_instruction(message: types.Message):
@@ -52,16 +52,17 @@ async def add_product_instruction(message: types.Message):
     )
 
 # ==========================
-# Прием фото и текста
+# Обработка фото и текста
 # ==========================
 @dp.message()
 async def handle_product(message: types.Message):
     user_id = message.from_user.id
 
-    # Если пользователь редактирует текст
+    # Пользователь редактирует текст
     if user_id in editing_users:
         pending_products[user_id]["text"] = message.text
         editing_users.remove(user_id)
+        pending_products[user_id]["ready"] = True
         await message.answer(
             "Текст збережено. Тепер можеш опублікувати товар.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -77,7 +78,7 @@ async def handle_product(message: types.Message):
         return
 
     if user_id not in pending_products:
-        pending_products[user_id] = {"photos": [], "text": ""}
+        pending_products[user_id] = {"photos": [], "text": "", "ready": False}
 
     # Сохраняем фото
     if message.photo:
@@ -85,7 +86,7 @@ async def handle_product(message: types.Message):
     elif message.document and message.document.mime_type.startswith("image/"):
         pending_products[user_id]["photos"].append(message.document.file_id)
 
-    # Если есть подпись, сохраняем текст
+    # Если пришёл текст в caption, сохраняем и делаем товар готовым
     if message.caption:
         lines = [line.strip() for line in message.caption.split("\n") if line.strip()]
         if len(lines) < 5:
@@ -95,8 +96,8 @@ async def handle_product(message: types.Message):
             )
             return
         pending_products[user_id]["text"] = message.caption
+        pending_products[user_id]["ready"] = True
 
-        # Предпросмотр и кнопки
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Редагувати текст", callback_data="edit_text")],
             [InlineKeyboardButton(text="Опублікувати", callback_data="publish")]
@@ -127,23 +128,18 @@ async def handle_callback(callback: types.CallbackQuery):
         return
 
     if callback.data == "publish":
-        if not data or not data.get("photos") or not data.get("text"):
-            await callback.answer("❌ Немає повного товару для публікації.", show_alert=True)
+        if not data or not data.get("photos") or not data.get("text") or not data.get("ready"):
+            await callback.answer("❌ Товар ще не готовий до публікації.", show_alert=True)
             return
 
         lines = [line.strip() for line in data["text"].split("\n") if line.strip()]
-        if len(lines) < 5:
-            await callback.answer("❌ Текст має містити мінімум 5 рядків, останній рядок - URL.", show_alert=True)
-            return
-
         url_candidate = lines[-1]
-        if not re.match(r'^https?://', url_candidate):
+        if len(lines) < 5 or not re.match(r'^https?://', url_candidate):
             await callback.answer("❌ Останній рядок повинен бути валідним URL.", show_alert=True)
             return
+
         url = url_candidate
         caption = "\n".join(lines[:-1])
-
-        # Галерея фото
         media = [types.InputMediaPhoto(media=photo_id) for photo_id in data["photos"]]
         media[0].caption = caption
 
