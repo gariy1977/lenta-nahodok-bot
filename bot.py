@@ -3,7 +3,7 @@ import asyncio
 import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
-from aiogram.filters import CommandStart, Text
+from aiogram.filters import CommandStart
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
@@ -22,12 +22,14 @@ def buy_keyboard(url: str):
         [InlineKeyboardButton(text="Подивитись та купити", url=url)]
     ])
 
-# Временное хранилище товаров {user_id: {"photos": [...], "text": str}}
+# Временное хранение товаров в памяти {user_id: {"photos": [], "text": str}}
 pending_products = {}
 # Пользователи, которые редактируют текст
 editing_users = set()
 
+# ==========================
 # Старт
+# ==========================
 @dp.message(CommandStart())
 async def start(message: types.Message):
     await message.answer(
@@ -35,8 +37,10 @@ async def start(message: types.Message):
         reply_markup=main_keyboard
     )
 
+# ==========================
 # Инструкция
-@dp.message(Text("➕ Добавить товар"))
+# ==========================
+@dp.message(F.text == "➕ Добавить товар")
 async def add_product_instruction(message: types.Message):
     user_id = message.from_user.id
     pending_products.pop(user_id, None)
@@ -47,7 +51,9 @@ async def add_product_instruction(message: types.Message):
         "Після цього ти зможеш редагувати текст перед публікацією."
     )
 
+# ==========================
 # Прием фото и текста
+# ==========================
 @dp.message()
 async def handle_product(message: types.Message):
     user_id = message.from_user.id
@@ -102,56 +108,58 @@ async def handle_product(message: types.Message):
             "Назва\nОпис\nЦіна\nДоставка\nПосилання"
         )
 
-# Кнопка редактирования текста
-@dp.callback_query(Text("edit_text"))
-async def edit_text(callback: types.CallbackQuery):
+# ==========================
+# Редактирование и публикация
+# ==========================
+@dp.callback_query()
+async def handle_callback(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     data = pending_products.get(user_id)
-    if not data or not data.get("photos") or not data.get("text"):
-        await callback.answer("❌ Немає товару для редагування.", show_alert=True)
-        return
-    editing_users.add(user_id)
-    await callback.message.answer("✏️ Відредагуй текст нижче і надішли його назад:", reply_markup=None)
-    await callback.message.answer(data["text"])
-    await callback.answer()
 
-# Кнопка публикации
-@dp.callback_query(Text("publish"))
-async def publish_product(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    data = pending_products.get(user_id)
-    if not data or not data.get("photos") or not data.get("text"):
-        await callback.answer("❌ Немає повного товару для публікації.", show_alert=True)
+    if callback.data == "edit_text":
+        if not data or not data.get("photos") or not data.get("text"):
+            await callback.answer("❌ Немає товару для редагування.", show_alert=True)
+            return
+        editing_users.add(user_id)
+        await callback.message.answer("✏️ Відредагуй текст нижче і надішли його назад:", reply_markup=None)
+        await callback.message.answer(data["text"])
+        await callback.answer()
         return
 
-    lines = [line.strip() for line in data["text"].split("\n") if line.strip()]
-    if len(lines) < 5:
-        await callback.answer("❌ Текст має містити мінімум 5 рядків, останній рядок - URL.", show_alert=True)
-        return
+    if callback.data == "publish":
+        if not data or not data.get("photos") or not data.get("text"):
+            await callback.answer("❌ Немає повного товару для публікації.", show_alert=True)
+            return
 
-    url_candidate = lines[-1]
-    if not re.match(r'^https?://', url_candidate):
-        await callback.answer("❌ Останній рядок повинен бути валідним URL.", show_alert=True)
-        return
-    url = url_candidate
+        lines = [line.strip() for line in data["text"].split("\n") if line.strip()]
+        if len(lines) < 5:
+            await callback.answer("❌ Текст має містити мінімум 5 рядків, останній рядок - URL.", show_alert=True)
+            return
 
-    caption = "\n".join(lines[:-1])  # Все кроме последнего ряда
+        url_candidate = lines[-1]
+        if not re.match(r'^https?://', url_candidate):
+            await callback.answer("❌ Останній рядок повинен бути валідним URL.", show_alert=True)
+            return
+        url = url_candidate
+        caption = "\n".join(lines[:-1])
 
-    # Создаем галерею фото
-    media = [types.InputMediaPhoto(media=photo_id) for photo_id in data["photos"]]
-    media[0].caption = caption  # caption только к первому фото
+        # Галерея фото
+        media = [types.InputMediaPhoto(media=photo_id) for photo_id in data["photos"]]
+        media[0].caption = caption
 
-    try:
-        await bot.send_media_group(chat_id=CHANNEL_ID, media=media)
-        await bot.send_message(chat_id=CHANNEL_ID, text="Подивитись та купити", reply_markup=buy_keyboard(url))
-        await callback.message.answer("✅ Товар опубліковано!", reply_markup=main_keyboard)
-        pending_products.pop(user_id, None)
-    except Exception as e:
-        await callback.message.answer(f"❌ Помилка публікації:\n{e}")
+        try:
+            await bot.send_media_group(chat_id=CHANNEL_ID, media=media)
+            await bot.send_message(chat_id=CHANNEL_ID, text="Подивитись та купити", reply_markup=buy_keyboard(url))
+            await callback.message.answer("✅ Товар опубліковано!", reply_markup=main_keyboard)
+            pending_products.pop(user_id, None)
+        except Exception as e:
+            await callback.message.answer(f"❌ Помилка публікації:\n{e}")
 
-    await callback.answer()  # Подтверждаем callback_query
+        await callback.answer()
 
+# ==========================
 # Запуск
+# ==========================
 async def main():
     await dp.start_polling(bot)
 
