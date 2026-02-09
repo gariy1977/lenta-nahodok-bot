@@ -1,6 +1,5 @@
 import os
 import asyncio
-from io import BytesIO
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, BufferedInputFile
@@ -14,51 +13,55 @@ if not BOT_TOKEN or not CHANNEL_ID:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Формирование кнопки
-def build_keyboard(referral_url: str):
+def build_keyboard(url: str):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Подивитись та купити", url=referral_url)]
+        [InlineKeyboardButton(text="Подивитись та купити", url=url)]
     ])
 
-# Отправка товара
 async def send_product(channel_id: str, photo_bytes: bytes, caption: str, referral_url: str):
     photo_file = BufferedInputFile(photo_bytes, filename="product.jpg")
     await bot.send_photo(
         chat_id=channel_id,
         photo=photo_file,
         caption=caption,
-        reply_markup=build_keyboard(referral_url)
+        reply_markup=build_keyboard(referral_url),
+        parse_mode="HTML"
     )
 
-# Обработчик сообщений
 @dp.message()
 async def handle_message(message: types.Message):
-    # Получаем фото
-    file_bytes = None
-
-    if message.photo:
-        file = await bot.get_file(message.photo[-1].file_id)
-        file_bytes = await bot.download_file(file.file_path)
-    elif message.document and message.document.mime_type.startswith("image/"):
-        file = await bot.get_file(message.document.file_id)
-        file_bytes = await bot.download_file(file.file_path)
-
-    if not file_bytes:
-        await message.reply("📸 Пришли картинку товара")
+    # ❌ если нет фото — игнорируем сразу
+    if not message.photo and not (message.document and message.document.mime_type.startswith("image/")):
+        await message.reply("📸 Пришли ОДНО сообщение: фото + подпись")
         return
 
-    # Проверяем подпись
-    if not message.caption or ";" not in message.caption:
+    # ❌ если нет подписи — сразу ошибка
+    if not message.caption:
         await message.reply(
-            "Подпись в формате:\n"
+            "✍️ Добавь подпись:\n"
             "Название; Цена; Кратко; Описание; Ссылка"
         )
         return
 
+    # Получаем файл
+    if message.photo:
+        file_id = message.photo[-1].file_id
+    else:
+        file_id = message.document.file_id
+
+    file = await bot.get_file(file_id)
+    stream = await bot.download_file(file.file_path)
+    photo_bytes = stream.read()
+
+    # Парсим подпись
     parts = list(map(str.strip, message.caption.split(";")))
 
     if len(parts) < 5:
-        await message.reply("❌ Недостаточно данных в подписи")
+        await message.reply(
+            "❌ Формат неверный\n"
+            "Пример:\n"
+            "Название; Цена; Кратко; Описание; Ссылка"
+        )
         return
 
     title, price, short, description, referral_url = parts[:5]
@@ -70,16 +73,12 @@ async def handle_message(message: types.Message):
         f"📝 {description}"
     )
 
-    await send_product(CHANNEL_ID, file_bytes.read(), caption, referral_url)
+    await send_product(CHANNEL_ID, photo_bytes, caption, referral_url)
 
-    await message.reply("✅ Товар опубликован в канале")
+    await message.reply("✅ Товар опубликован в канал")
 
-# Запуск
 async def main():
-    try:
-        await dp.start_polling(bot)
-    finally:
-        await bot.session.close()
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
