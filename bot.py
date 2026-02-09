@@ -1,114 +1,115 @@
 import os
 import asyncio
-import re
-
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, BufferedInputFile
-from aiogram.filters import Command
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.filters import CommandStart
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 
-if not BOT_TOKEN or not CHANNEL_ID:
-    raise RuntimeError("BOT_TOKEN или CHANNEL_ID не заданы")
-
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Главное меню
-def main_menu():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="➕ Додати товар", callback_data="add_product")]
-        ]
-    )
+# Кнопка "Добавить товар"
+main_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="➕ Добавить товар")]
+    ],
+    resize_keyboard=True
+)
 
-# Кнопка покупки
+# Кнопка "Купить"
 def buy_keyboard(url: str):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🛒 Подивитись та купити", url=url)]
-        ]
-    )
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🛒 Подивитись та купити", url=url)]
+    ])
 
-# Команда /start
-@dp.message(Command("start"))
+# Старт
+@dp.message(CommandStart())
 async def start(message: types.Message):
-    await message.reply(
-        "Привіт! Я бот для додавання товарів у канал 📦\n\n"
-        "Натисни кнопку нижче, щоб додати товар 👇",
-        reply_markup=main_menu()
+    await message.answer(
+        "Привіт! Натисни кнопку ➕ Додати товар, щоб опублікувати товар у канал.",
+        reply_markup=main_keyboard
     )
 
-# Кнопка "Додати товар"
-@dp.callback_query(lambda c: c.data == "add_product")
-async def add_product_callback(callback: types.CallbackQuery):
-    await callback.message.reply(
-        "📸 Надішли ОДНЕ повідомлення:\n\n"
-        "1️⃣ Фото товару\n"
-        "2️⃣ Опис (у будь-якому форматі)\n"
-        "3️⃣ Партнерське посилання (https://...)\n\n"
-        "Приклад:\n"
-        "💆‍♀️ Набір для волосся\n"
-        "💰 Ціна: 1284 грн\n"
-        "🚚 Доставка Nutritive\n"
-        "https://site.com/product"
+# Инструкция по кнопке
+@dp.message(F.text == "➕ Добавить товар")
+async def add_product_instruction(message: types.Message):
+    await message.answer(
+        "📦 Надішли фото товару з підписом у форматі:\n\n"
+        "Назва\n"
+        "Ціна\n"
+        "Коротко\n"
+        "Опис\n"
+        "Посилання\n\n"
+        "📌 Приклад:\n"
+        "Назва товару\n"
+        "1284 грн\n"
+        "Набір для волосся\n"
+        "Повний опис товару\n"
+        "https://link.com"
     )
-    await callback.answer()
 
 # Отправка товара в канал
-async def send_product(channel_id: str, photo_bytes: bytes, caption: str, referral_url: str):
-    photo_file = BufferedInputFile(photo_bytes, filename="product.jpg")
-
+async def send_product(photo_bytes: bytes, caption: str, url: str):
     await bot.send_photo(
-        chat_id=channel_id,
-        photo=photo_file,
+        chat_id=CHANNEL_ID,
+        photo=photo_bytes,
         caption=caption,
-        reply_markup=buy_keyboard(referral_url),
-        parse_mode="HTML"
+        reply_markup=buy_keyboard(url)
     )
 
-# Основной обработчик товаров
+# Приём товара
 @dp.message()
-async def handle_message(message: types.Message):
-    # Проверка фото
-    if not message.photo and not (
-        message.document and message.document.mime_type and message.document.mime_type.startswith("image/")
-    ):
+async def handle_product(message: types.Message):
+    photo_bytes = None
+
+    # Получаем фото
+    if message.photo:
+        photo_bytes = await message.photo[-1].download(destination=bytes)
+    elif message.document and message.document.mime_type.startswith("image/"):
+        photo_bytes = await message.document.download(destination=bytes)
+
+    if not photo_bytes:
+        await message.answer("❌ Надішли фото товару.", reply_markup=main_keyboard)
         return
 
-    # Проверка текста
+    # Проверяем подпись
     if not message.caption:
-        await message.reply("✍️ Додай опис товару та партнерське посилання")
+        await message.answer("❌ Додай опис у підписі до фото.", reply_markup=main_keyboard)
         return
 
-    # Получаем file_id
-    file_id = message.photo[-1].file_id if message.photo else message.document.file_id
+    lines = [line.strip() for line in message.caption.split("\n") if line.strip()]
 
-    # Скачиваем файл
-    file = await bot.get_file(file_id)
-    stream = await bot.download_file(file.file_path)
-    photo_bytes = stream.read()
-
-    raw_text = message.caption.strip()
-
-    # Ищем ссылку
-    url_match = re.search(r"(https?://\S+)", raw_text)
-    if not url_match:
-        await message.reply("❌ Додай партнерське посилання (https://...)")
+    if len(lines) < 5:
+        await message.answer(
+            "❌ Формат невірний.\n\n"
+            "Потрібно 5 рядків:\n"
+            "Назва\nЦіна\nКоротко\nОпис\nПосилання",
+            reply_markup=main_keyboard
+        )
         return
 
-    referral_url = url_match.group(1)
+    title = lines[0]
+    price = lines[1]
+    short = lines[2]
+    description = lines[3]
+    url = lines[-1]
 
-    # Убираем ссылку из описания
-    caption_text = raw_text.replace(referral_url, "").strip()
+    caption = (
+        f"🛍 {title}\n\n"
+        f"💰 Ціна: {price}\n"
+        f"✨ {short}\n\n"
+        f"📄 {description}"
+    )
 
-    caption = caption_text.replace("\n\n\n", "\n\n").strip()
+    await send_product(photo_bytes, caption, url)
 
-    # Отправляем в канал
-    await send_product(CHANNEL_ID, photo_bytes, caption, referral_url)
-
-    await message.reply("✅ Товар опубліковано в канал")
+    await message.answer(
+        "✅ Товар опубліковано в канал!\n\n"
+        "Можеш додати ще один товар 👇",
+        reply_markup=main_keyboard
+    )
 
 # Запуск
 async def main():
