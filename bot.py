@@ -21,11 +21,11 @@ main_keyboard = ReplyKeyboardMarkup(
 
 def buy_keyboard(url: str):
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="Подивитись та купити", url=url)]]
+        inline_keyboard=[[InlineKeyboardButton(text="🛒 Подивитись та купити", url=url)]]
     )
 
 # ==========================
-# Хранилище
+# Память товаров
 # ==========================
 pending_products = {}
 
@@ -44,22 +44,21 @@ async def start(message: types.Message):
 # ==========================
 @dp.message(F.text == "➕ Добавить товар")
 async def add_product(message: types.Message):
-    user_id = message.from_user.id
-    pending_products[user_id] = {
+    pending_products[message.from_user.id] = {
         "photos": [],
         "text": "",
         "editing": False,
-        "sent_preview": False
+        "preview_sent": False
     }
 
     await message.answer(
         "📦 Надішли фото товару (можна кілька).\n"
-        "Після цього надішли текст у форматі:\n\n"
+        "Потім надішли текст у форматі:\n\n"
         "Назва\nОпис\nЦіна\nДоставка\nПосилання"
     )
 
 # ==========================
-# Обработка сообщений
+# Основной обработчик
 # ==========================
 @dp.message()
 async def handle_product(message: types.Message):
@@ -67,60 +66,55 @@ async def handle_product(message: types.Message):
     data = pending_products.get(user_id)
 
     if not data:
-        await message.answer("Спочатку натисни ➕ Додати товар.")
         return
 
     # ==========================
-    # РЕДАКТИРОВАНИЕ ТЕКСТА
+    # РЕДАКТИРОВАНИЕ
     # ==========================
-    if data["editing"]:
+    if data["editing"] and message.text:
         data["text"] = message.text
         data["editing"] = False
-        await send_preview(message, user_id)
+        data["preview_sent"] = False
+        await try_send_preview(message, user_id)
         return
 
     # ==========================
     # ФОТО
     # ==========================
-    if message.photo or (message.document and message.document.mime_type.startswith("image/")):
-        file_id = message.photo[-1].file_id if message.photo else message.document.file_id
-        data["photos"].append(file_id)
-        return  # ВАЖНО: НЕ ОТВЕЧАЕМ НА КАЖДОЕ ФОТО
+    if message.photo:
+        data["photos"].append(message.photo[-1].file_id)
+        await try_send_preview(message, user_id)
+        return
 
     # ==========================
     # ТЕКСТ
     # ==========================
     if message.text:
-        lines = [line.strip() for line in message.text.split("\n") if line.strip()]
+        lines = [l.strip() for l in message.text.split("\n") if l.strip()]
 
         if len(lines) < 5:
             await message.answer(
-                "❌ Формат невірний.\n\n"
+                "❌ Формат неправильний.\n\n"
                 "Потрібно:\nНазва\nОпис\nЦіна\nДоставка\nПосилання"
             )
             return
 
         data["text"] = message.text
-        await send_preview(message, user_id)
+        await try_send_preview(message, user_id)
 
 # ==========================
 # Предпросмотр
 # ==========================
-async def send_preview(message, user_id):
+async def try_send_preview(message, user_id):
     data = pending_products[user_id]
 
-    if not data["photos"]:
-        await message.answer("❌ Спочатку надішли фото товару.")
+    if data["preview_sent"]:
         return
 
-    if not data["text"]:
-        await message.answer("❌ Спочатку надішли текст.")
+    if not data["photos"] or not data["text"]:
         return
 
-    if data["sent_preview"]:
-        return  # НЕ СПАМИМ ПОВТОРНО
-
-    data["sent_preview"] = True
+    data["preview_sent"] = True
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ Редагувати текст", callback_data="edit_text")],
@@ -130,7 +124,7 @@ async def send_preview(message, user_id):
     await message.answer("✅ Товар готовий до публікації.", reply_markup=keyboard)
 
 # ==========================
-# CALLBACK КНОПКИ
+# CALLBACK
 # ==========================
 @dp.callback_query()
 async def handle_callback(callback: types.CallbackQuery):
@@ -146,7 +140,7 @@ async def handle_callback(callback: types.CallbackQuery):
     # ==========================
     if callback.data == "edit_text":
         data["editing"] = True
-        data["sent_preview"] = False
+        data["preview_sent"] = False
         await callback.message.answer("✏️ Надішли новий текст:")
         await callback.answer()
         return
@@ -159,7 +153,7 @@ async def handle_callback(callback: types.CallbackQuery):
             await callback.answer("❌ Товар не готовий", show_alert=True)
             return
 
-        lines = [line.strip() for line in data["text"].split("\n") if line.strip()]
+        lines = [l.strip() for l in data["text"].split("\n") if l.strip()]
         url = lines[-1]
 
         if not re.match(r"^https?://", url):
@@ -172,14 +166,14 @@ async def handle_callback(callback: types.CallbackQuery):
         media[0].caption = caption
 
         try:
-            await bot.send_media_group(chat_id=CHANNEL_ID, media=media)
-            await bot.send_message(chat_id=CHANNEL_ID, text="🛒 Купити", reply_markup=buy_keyboard(url))
+            await bot.send_media_group(CHANNEL_ID, media)
+            await bot.send_message(CHANNEL_ID, "🛒 Купити", reply_markup=buy_keyboard(url))
 
-            await callback.message.answer("✅ Опубліковано!")
+            await callback.message.answer("✅ Опубліковано!", reply_markup=main_keyboard)
             pending_products.pop(user_id, None)
 
         except Exception as e:
-            await callback.message.answer(f"❌ Помилка:\n{e}")
+            await callback.message.answer(f"❌ Помилка публікації:\n{e}")
 
         await callback.answer()
 
