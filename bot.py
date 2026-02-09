@@ -14,15 +14,48 @@ if not BOT_TOKEN or not CHANNEL_ID:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Кнопка покупки
-def build_keyboard(url: str):
+# Главное меню
+def main_menu():
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Подивитись та купити", url=url)]
+            [InlineKeyboardButton(text="➕ Додати товар", callback_data="add_product")]
         ]
     )
 
-# Отправка товара в канал
+# Кнопка покупки
+def buy_keyboard(url: str):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🛒 Подивитись та купити", url=url)]
+        ]
+    )
+
+# Команда /start
+@dp.message(commands=["start"])
+async def start(message: types.Message):
+    await message.reply(
+        "Привіт! Я бот для додавання товарів у канал 📦\n\n"
+        "Натисни кнопку нижче, щоб додати товар 👇",
+        reply_markup=main_menu()
+    )
+
+# Кнопка "Додати товар"
+@dp.callback_query(lambda c: c.data == "add_product")
+async def add_product_callback(callback: types.CallbackQuery):
+    await callback.message.reply(
+        "📸 Надішли ОДНЕ повідомлення:\n\n"
+        "1️⃣ Фото товару\n"
+        "2️⃣ Опис (у будь-якому форматі)\n"
+        "3️⃣ Партнерське посилання (https://...)\n\n"
+        "Приклад:\n"
+        "💆‍♀️ Набір для волосся\n"
+        "💰 Ціна: 1284 грн\n"
+        "🚚 Доставка Nutritive\n"
+        "https://site.com/product",
+    )
+    await callback.answer()
+
+# Отправка товара
 async def send_product(channel_id: str, photo_bytes: bytes, caption: str, referral_url: str):
     photo_file = BufferedInputFile(photo_bytes, filename="product.jpg")
 
@@ -30,19 +63,18 @@ async def send_product(channel_id: str, photo_bytes: bytes, caption: str, referr
         chat_id=channel_id,
         photo=photo_file,
         caption=caption,
-        reply_markup=build_keyboard(referral_url),
+        reply_markup=buy_keyboard(referral_url),
         parse_mode="HTML"
     )
 
-# Основной обработчик
+# Основной обработчик товаров
 @dp.message()
 async def handle_message(message: types.Message):
-    # Проверка наличия фото
+    # Проверка фото
     if not message.photo and not (message.document and message.document.mime_type and message.document.mime_type.startswith("image/")):
-        await message.reply("📸 Надішли ОДНЕ повідомлення: фото + опис + посилання")
-        return
+        return  # игнорируем всё, кроме товара
 
-    # Проверка наличия текста
+    # Проверка текста
     if not message.caption:
         await message.reply("✍️ Додай опис товару та партнерське посилання")
         return
@@ -60,7 +92,7 @@ async def handle_message(message: types.Message):
 
     raw_text = message.caption.strip()
 
-    # Ищем ссылку в тексте
+    # Ищем ссылку
     url_match = re.search(r"(https?://\S+)", raw_text)
     if not url_match:
         await message.reply("❌ Додай партнерське посилання (https://...)")
@@ -71,7 +103,7 @@ async def handle_message(message: types.Message):
     # Убираем ссылку из описания
     caption_text = raw_text.replace(referral_url, "").strip()
 
-    # Мини-чистка форматирования
+    # Мини-чистка
     caption = caption_text.replace("\n\n\n", "\n\n").strip()
 
     # Отправка в канал
@@ -79,7 +111,7 @@ async def handle_message(message: types.Message):
 
     await message.reply("✅ Товар опубліковано в канал")
 
-# Запуск бота
+# Запуск
 async def main():
     await dp.start_polling(bot)
 
