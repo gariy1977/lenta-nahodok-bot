@@ -5,13 +5,18 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.filters import CommandStart
 
+# ==========================
+# Настройки
+# ==========================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID")
+CHANNEL_ID = int(os.getenv("CHANNEL_ID"))  # сразу в int, чтобы Telegram API не ругался
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Основная клавиатура
+# ==========================
+# Клавиатуры
+# ==========================
 main_keyboard = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="➕ Добавить товар")]],
     resize_keyboard=True
@@ -22,9 +27,11 @@ def buy_keyboard(url: str):
         [InlineKeyboardButton(text="Подивитись та купити", url=url)]
     ])
 
-# Хранилище товаров {user_id: {"photos": [], "text": str, "ready": bool, "notified_photo": bool}}
+# ==========================
+# Хранилище товаров
+# {user_id: {"photos": [], "text": str, "ready": bool, "editing": bool}}
+# ==========================
 pending_products = {}
-editing_users = set()
 
 # ==========================
 # Старт
@@ -42,12 +49,11 @@ async def start(message: types.Message):
 @dp.message(F.text == "➕ Добавить товар")
 async def add_product_instruction(message: types.Message):
     user_id = message.from_user.id
-    pending_products[user_id] = {"photos": [], "text": "", "ready": False, "notified_photo": False}
-    editing_users.discard(user_id)
+    pending_products[user_id] = {"photos": [], "text": "", "ready": False, "editing": False}
     await message.answer(
         "📦 Надішли фото товару (можна кілька) та текст у підписі у форматі:\n\n"
         "Назва\nОпис\nЦіна\nДоставка\nПосилання\n\n"
-        "Після цього ти зможеш редагувати текст перед публікацією."
+        "Можна спочатку фото, потім текст, або одразу все разом."
     )
 
 # ==========================
@@ -57,16 +63,17 @@ async def add_product_instruction(message: types.Message):
 async def handle_product(message: types.Message):
     user_id = message.from_user.id
     data = pending_products.get(user_id)
-
     if not data:
         await message.answer("Спочатку натисни ➕ Додати товар.", reply_markup=main_keyboard)
         return
 
-    # Пользователь редактирует текст
-    if user_id in editing_users:
+    # --------------------------
+    # Редактирование текста
+    # --------------------------
+    if data["editing"]:
         data["text"] = message.text
         data["ready"] = True
-        editing_users.remove(user_id)
+        data["editing"] = False
         await message.answer(
             "Текст збережено. Тепер можеш опублікувати товар.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -76,41 +83,43 @@ async def handle_product(message: types.Message):
         )
         return
 
-    # Обработка фото
+    # --------------------------
+    # Фото
+    # --------------------------
     is_photo = message.photo or (message.document and message.document.mime_type.startswith("image/"))
     if is_photo:
-        if message.photo:
-            data["photos"].append(message.photo[-1].file_id)
-        else:
-            data["photos"].append(message.document.file_id)
+        file_id = message.photo[-1].file_id if message.photo else message.document.file_id
+        data["photos"].append(file_id)
 
-    # Сообщение о том, что фото добавлено, только один раз
-    if is_photo and not message.caption and not data["notified_photo"]:
-        data["notified_photo"] = True
-        await message.answer(
-            "✅ Фото додано. Надішли текст опису після всіх фото у форматі:\n"
-            "Назва\nОпис\nЦіна\nДоставка\nПосилання"
-        )
-        return
-
-    # Обработка текста (caption или сообщение)
+    # --------------------------
+    # Текст
+    # --------------------------
     text = message.caption if message.caption else message.text
-    if text:
+    if text and len(text.strip()) > 0:
         lines = [line.strip() for line in text.split("\n") if line.strip()]
         if len(lines) < 5:
             await message.answer(
-                "❌ Формат тексту невірний.\n\nПотрібно мінімум 5 рядків:\nНазва\nОпис\nЦіна\nДоставка\nПосилання",
+                "❌ Формат тексту невірний.\nПотрібно мінімум 5 рядків:\nНазва\nОпис\nЦіна\nДоставка\nПосилання",
                 reply_markup=main_keyboard
             )
             return
         data["text"] = text
         data["ready"] = True
 
+    # --------------------------
+    # Сообщение пользователю
+    # --------------------------
+    if data["photos"] and data["ready"]:
+        # Есть фото и текст — товар готов
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Редагувати текст", callback_data="edit_text")],
             [InlineKeyboardButton(text="Опублікувати", callback_data="publish")]
         ])
         await message.answer("✅ Товар готовий до публікації.", reply_markup=keyboard)
+    elif data["photos"]:
+        await message.answer("✅ Фото додано. Надішли текст опису після всіх фото.")
+    elif data["text"]:
+        await message.answer("✅ Текст додано. Тепер можеш додати фото.")
 
 # ==========================
 # Редактирование и публикация
@@ -119,19 +128,22 @@ async def handle_product(message: types.Message):
 async def handle_callback(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     data = pending_products.get(user_id)
+    if not data:
+        await callback.answer("❌ Немає товару.", show_alert=True)
+        return
 
     if callback.data == "edit_text":
-        if not data or not data.get("photos") or not data.get("text"):
-            await callback.answer("❌ Немає товару для редагування.", show_alert=True)
+        if not data["text"]:
+            await callback.answer("❌ Немає тексту для редагування.", show_alert=True)
             return
-        editing_users.add(user_id)
+        data["editing"] = True
         await callback.message.answer("✏️ Відредагуй текст нижче і надішли його назад:", reply_markup=None)
         await callback.message.answer(data["text"])
         await callback.answer()
         return
 
     if callback.data == "publish":
-        if not data or not data.get("photos") or not data.get("text") or not data.get("ready"):
+        if not data["photos"] or not data["text"] or not data["ready"]:
             await callback.answer("❌ Товар ще не готовий до публікації.", show_alert=True)
             return
 
@@ -141,15 +153,15 @@ async def handle_callback(callback: types.CallbackQuery):
             return
 
         url = lines[-1]
-        caption = "\n".join(lines[:-1])
+        caption = "\n".join(lines[:-1]) or " "
+
         media = [types.InputMediaPhoto(media=photo_id) for photo_id in data["photos"]]
-        media[0].caption = caption if caption else " "
+        media[0].caption = caption
 
         try:
-            channel_id_int = int(CHANNEL_ID)
             if media:
-                await bot.send_media_group(chat_id=channel_id_int, media=media)
-            await bot.send_message(chat_id=channel_id_int, text="Подивитись та купити", reply_markup=buy_keyboard(url))
+                await bot.send_media_group(chat_id=CHANNEL_ID, media=media)
+            await bot.send_message(chat_id=CHANNEL_ID, text="Подивитись та купити", reply_markup=buy_keyboard(url))
             await callback.message.answer("✅ Товар опубліковано!", reply_markup=main_keyboard)
             pending_products.pop(user_id, None)
         except Exception as e:
