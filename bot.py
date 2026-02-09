@@ -1,5 +1,6 @@
 import os
 import asyncio
+import re
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, BufferedInputFile
@@ -13,13 +14,18 @@ if not BOT_TOKEN or not CHANNEL_ID:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# Кнопка покупки
 def build_keyboard(url: str):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Подивитись та купити", url=url)]
-    ])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Подивитись та купити", url=url)]
+        ]
+    )
 
+# Отправка товара в канал
 async def send_product(channel_id: str, photo_bytes: bytes, caption: str, referral_url: str):
     photo_file = BufferedInputFile(photo_bytes, filename="product.jpg")
+
     await bot.send_photo(
         chat_id=channel_id,
         photo=photo_file,
@@ -28,55 +34,52 @@ async def send_product(channel_id: str, photo_bytes: bytes, caption: str, referr
         parse_mode="HTML"
     )
 
+# Основной обработчик
 @dp.message()
 async def handle_message(message: types.Message):
-    # ❌ если нет фото — игнорируем сразу
-    if not message.photo and not (message.document and message.document.mime_type.startswith("image/")):
-        await message.reply("📸 Пришли ОДНО сообщение: фото + подпись")
+    # Проверка наличия фото
+    if not message.photo and not (message.document and message.document.mime_type and message.document.mime_type.startswith("image/")):
+        await message.reply("📸 Надішли ОДНЕ повідомлення: фото + опис + посилання")
         return
 
-    # ❌ если нет подписи — сразу ошибка
+    # Проверка наличия текста
     if not message.caption:
-        await message.reply(
-            "✍️ Добавь подпись:\n"
-            "Название; Цена; Кратко; Описание; Ссылка"
-        )
+        await message.reply("✍️ Додай опис товару та партнерське посилання")
         return
 
-    # Получаем файл
+    # Получаем file_id
     if message.photo:
         file_id = message.photo[-1].file_id
     else:
         file_id = message.document.file_id
 
+    # Скачиваем фото
     file = await bot.get_file(file_id)
     stream = await bot.download_file(file.file_path)
     photo_bytes = stream.read()
 
-    # Парсим подпись
-    parts = list(map(str.strip, message.caption.split(";")))
+    raw_text = message.caption.strip()
 
-    if len(parts) < 5:
-        await message.reply(
-            "❌ Формат неверный\n"
-            "Пример:\n"
-            "Название; Цена; Кратко; Описание; Ссылка"
-        )
+    # Ищем ссылку в тексте
+    url_match = re.search(r"(https?://\S+)", raw_text)
+    if not url_match:
+        await message.reply("❌ Додай партнерське посилання (https://...)")
         return
 
-    title, price, short, description, referral_url = parts[:5]
+    referral_url = url_match.group(1)
 
-    caption = (
-        f"🛍 <b>{title}</b>\n"
-        f"💰 <b>{price}</b>\n\n"
-        f"📌 {short}\n\n"
-        f"📝 {description}"
-    )
+    # Убираем ссылку из описания
+    caption_text = raw_text.replace(referral_url, "").strip()
 
+    # Мини-чистка форматирования
+    caption = caption_text.replace("\n\n\n", "\n\n").strip()
+
+    # Отправка в канал
     await send_product(CHANNEL_ID, photo_bytes, caption, referral_url)
 
-    await message.reply("✅ Товар опубликован в канал")
+    await message.reply("✅ Товар опубліковано в канал")
 
+# Запуск бота
 async def main():
     await dp.start_polling(bot)
 
