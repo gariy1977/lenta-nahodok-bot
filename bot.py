@@ -1,5 +1,6 @@
 import os
 import asyncio
+from io import BytesIO
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.filters import CommandStart
@@ -10,82 +11,64 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Кнопка "Добавить товар"
 main_keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="➕ Добавить товар")]
-    ],
+    keyboard=[[KeyboardButton(text="➕ Добавить товар")]],
     resize_keyboard=True
 )
 
-# Кнопка "Купить"
 def buy_keyboard(url: str):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🛒 Подивитись та купити", url=url)]
     ])
 
-# Старт
 @dp.message(CommandStart())
 async def start(message: types.Message):
     await message.answer(
-        "Привіт! Натисни кнопку ➕ Додати товар, щоб опублікувати товар у канал.",
+        "Привіт! Натисни ➕ Додати товар для публікації.",
         reply_markup=main_keyboard
     )
 
-# Инструкция по кнопке
 @dp.message(F.text == "➕ Добавить товар")
 async def add_product_instruction(message: types.Message):
     await message.answer(
         "📦 Надішли фото товару з підписом у форматі:\n\n"
-        "Назва\n"
-        "Ціна\n"
-        "Коротко\n"
-        "Опис\n"
-        "Посилання\n\n"
+        "Назва\nЦіна\nКоротко\nОпис\nПосилання\n\n"
         "📌 Приклад:\n"
-        "Назва товару\n"
-        "1284 грн\n"
-        "Набір для волосся\n"
-        "Повний опис товару\n"
-        "https://link.com"
+        "Назва товару\n1284 грн\nНабір\nОпис товару\nhttps://link.com"
     )
 
-# Отправка товара в канал
-async def send_product(photo_bytes: bytes, caption: str, url: str):
+async def send_product(photo_file, caption: str, url: str):
     await bot.send_photo(
         chat_id=CHANNEL_ID,
-        photo=photo_bytes,
+        photo=photo_file,
         caption=caption,
         reply_markup=buy_keyboard(url)
     )
 
-# Приём товара
 @dp.message()
 async def handle_product(message: types.Message):
-    photo_bytes = None
+    photo_file = None
 
-    # Получаем фото
+    # Фото
     if message.photo:
-        photo_bytes = await message.photo[-1].download(destination=bytes)
+        photo_file = message.photo[-1].file_id
     elif message.document and message.document.mime_type.startswith("image/"):
-        photo_bytes = await message.document.download(destination=bytes)
+        photo_file = message.document.file_id
 
-    if not photo_bytes:
+    if not photo_file:
         await message.answer("❌ Надішли фото товару.", reply_markup=main_keyboard)
         return
 
-    # Проверяем подпись
+    # Подпись
     if not message.caption:
-        await message.answer("❌ Додай опис у підписі до фото.", reply_markup=main_keyboard)
+        await message.answer("❌ Додай опис у підписі.", reply_markup=main_keyboard)
         return
 
     lines = [line.strip() for line in message.caption.split("\n") if line.strip()]
 
     if len(lines) < 5:
         await message.answer(
-            "❌ Формат невірний.\n\n"
-            "Потрібно 5 рядків:\n"
-            "Назва\nЦіна\nКоротко\nОпис\nПосилання",
+            "❌ Формат невірний.\n\nПотрібно:\nНазва\nЦіна\nКоротко\nОпис\nПосилання",
             reply_markup=main_keyboard
         )
         return
@@ -103,15 +86,15 @@ async def handle_product(message: types.Message):
         f"📄 {description}"
     )
 
-    await send_product(photo_bytes, caption, url)
+    try:
+        await send_product(photo_file, caption, url)
+        await message.answer(
+            "✅ Товар опубліковано!\n\nМожеш додати ще 👇",
+            reply_markup=main_keyboard
+        )
+    except Exception as e:
+        await message.answer(f"❌ Помилка публікації:\n{e}")
 
-    await message.answer(
-        "✅ Товар опубліковано в канал!\n\n"
-        "Можеш додати ще один товар 👇",
-        reply_markup=main_keyboard
-    )
-
-# Запуск
 async def main():
     await dp.start_polling(bot)
 
