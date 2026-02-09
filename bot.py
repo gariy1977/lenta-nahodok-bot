@@ -47,11 +47,6 @@ async def add_product_instruction(message: types.Message):
 async def handle_product(message: types.Message):
     user_id = message.from_user.id
 
-    # Проверка фото
-    if not (message.photo or (message.document and message.document.mime_type.startswith("image/"))):
-        await message.answer("❌ Надішли фото товару.", reply_markup=main_keyboard)
-        return
-
     if user_id not in pending_products:
         pending_products[user_id] = {"photos": [], "text": ""}
 
@@ -61,7 +56,7 @@ async def handle_product(message: types.Message):
     elif message.document and message.document.mime_type.startswith("image/"):
         pending_products[user_id]["photos"].append(message.document.file_id)
 
-    # Если есть подпись, сохраняем текст
+    # Если есть текст, сохраняем и показываем кнопки
     if message.caption:
         lines = [line.strip() for line in message.caption.split("\n") if line.strip()]
         if len(lines) < 5:
@@ -72,18 +67,12 @@ async def handle_product(message: types.Message):
             return
         pending_products[user_id]["text"] = message.caption
 
-        # Предпросмотр и кнопки
         await message.answer(
             "✅ Товар готовий до публікації. Можеш відредагувати текст або опублікувати.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Редагувати текст", callback_data="edit_text")],
                 [InlineKeyboardButton(text="Опублікувати", callback_data="publish")]
             ])
-        )
-    else:
-        await message.answer(
-            "✅ Фото додано. Надішли текст опису після всіх фото у форматі:\n"
-            "Назва\nОпис\nЦіна\nДоставка\nПосилання"
         )
 
 # Кнопки редактирования/публикации
