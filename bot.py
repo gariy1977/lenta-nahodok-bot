@@ -4,6 +4,7 @@ import re
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, BufferedInputFile
+from aiogram.filters import Command
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
@@ -31,7 +32,7 @@ def buy_keyboard(url: str):
     )
 
 # Команда /start
-@dp.message(commands=["start"])
+@dp.message(Command("start"))
 async def start(message: types.Message):
     await message.reply(
         "Привіт! Я бот для додавання товарів у канал 📦\n\n"
@@ -51,11 +52,11 @@ async def add_product_callback(callback: types.CallbackQuery):
         "💆‍♀️ Набір для волосся\n"
         "💰 Ціна: 1284 грн\n"
         "🚚 Доставка Nutritive\n"
-        "https://site.com/product",
+        "https://site.com/product"
     )
     await callback.answer()
 
-# Отправка товара
+# Отправка товара в канал
 async def send_product(channel_id: str, photo_bytes: bytes, caption: str, referral_url: str):
     photo_file = BufferedInputFile(photo_bytes, filename="product.jpg")
 
@@ -71,8 +72,10 @@ async def send_product(channel_id: str, photo_bytes: bytes, caption: str, referr
 @dp.message()
 async def handle_message(message: types.Message):
     # Проверка фото
-    if not message.photo and not (message.document and message.document.mime_type and message.document.mime_type.startswith("image/")):
-        return  # игнорируем всё, кроме товара
+    if not message.photo and not (
+        message.document and message.document.mime_type and message.document.mime_type.startswith("image/")
+    ):
+        return
 
     # Проверка текста
     if not message.caption:
@@ -80,12 +83,9 @@ async def handle_message(message: types.Message):
         return
 
     # Получаем file_id
-    if message.photo:
-        file_id = message.photo[-1].file_id
-    else:
-        file_id = message.document.file_id
+    file_id = message.photo[-1].file_id if message.photo else message.document.file_id
 
-    # Скачиваем фото
+    # Скачиваем файл
     file = await bot.get_file(file_id)
     stream = await bot.download_file(file.file_path)
     photo_bytes = stream.read()
@@ -103,10 +103,9 @@ async def handle_message(message: types.Message):
     # Убираем ссылку из описания
     caption_text = raw_text.replace(referral_url, "").strip()
 
-    # Мини-чистка
     caption = caption_text.replace("\n\n\n", "\n\n").strip()
 
-    # Отправка в канал
+    # Отправляем в канал
     await send_product(CHANNEL_ID, photo_bytes, caption, referral_url)
 
     await message.reply("✅ Товар опубліковано в канал")
